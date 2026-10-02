@@ -44,7 +44,7 @@ svg{pointer-events:none}
 canvas{display:block;width:100%;height:100%}
 .chips{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:6px;flex-wrap:wrap;pointer-events:none;z-index:2}
 .chip{display:inline-flex;align-items:center;gap:4px;padding:6px 11px;border-radius:999px;font-weight:700;font-size:clamp(13px,2.2vmin,17px);background:#fff;box-shadow:0 3px 0 #0001;white-space:nowrap;animation:pop .3s}
-.chip.hot{background:#fff1dc;color:#b45b22}.chip.star{background:#fff4c2;color:#8a6a10}.chip.slow{background:#e3f4fb;color:#2c7ea0}.chip.shield{background:#e2f4f1;color:#227366}.chip.bonus{background:#f3e8ff;color:#6b3fa0;margin-left:auto}
+.chip.hot{background:#fff1dc;color:#b45b22}.chip.star{background:#fff4c2;color:#8a6a10}.chip.slow{background:#e3f4fb;color:#2c7ea0}.chip.shield{background:#e2f4f1;color:#227366}.chip.bonus{background:#f3e8ff;color:#6b3fa0;margin-left:auto}.chip.danger{background:#ffe3e3;color:#b42318;animation:dangerPulse 1s ease-in-out infinite}
 
 .countdown{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;z-index:3;font-size:clamp(64px,22vmin,150px);font-weight:700;color:#fff;text-shadow:0 6px 0 var(--green-dark),0 12px 28px #0004;letter-spacing:-1px}
 .countdown.ouch{text-shadow:0 6px 0 var(--pink-dark),0 12px 28px #0004}
@@ -137,6 +137,7 @@ h2{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--muted);text-transf
 @keyframes pop{from{transform:scale(.85);opacity:0}}
 @keyframes bob{50%{transform:translateY(-8px) rotate(6deg)}}
 @keyframes countPop{from{transform:scale(1.7);opacity:0}}
+@keyframes dangerPulse{50%{transform:scale(1.1)}}
 
 /* Yerleşim: dikey tablet/telefon → tahta üstte, oklar altta */
 @media (orientation:portrait){.stage{grid-template-rows:auto auto}}

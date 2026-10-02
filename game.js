@@ -61,6 +61,9 @@ const stickers = [
   {id: 'stars3', icon: '🌟', name: 'Üç Yıldız', how: 'Bir turda 3 yıldız kazan'},
   {id: 'rainbow', icon: '🌈', name: 'Gökkuşağı', how: 'Gökkuşağı yılanını aç'},
   {id: 'friend', icon: '💕', name: 'Can Dostu', how: 'Sürpriz arkadaşa sarıl'},
+  {id: 'gift', icon: '🎁', name: 'Hediye Avcısı', how: 'Arkadaşının bıraktığı hediyeyi aç'},
+  {id: 'twins', icon: '💞', name: 'Çifte Sarılma', how: 'Birlikte gelen iki arkadaşa da sarıl'},
+  {id: 'escape', icon: '🏃‍♀️', name: 'Kaçış Ustası', how: "Huysuz Yılan'dan ısırılmadan kurtul"},
   {id: 'ten-games', icon: '🎈', name: 'Bahçe Dostu', how: '10 tur oyna'}
 ];
 const praise = ['Harikasın Lara!', 'Süpersin!', 'Vay canına!', 'Muhteşem!', 'Bravo!', 'İşte bu!', 'Çok iyisin!'];
@@ -82,7 +85,7 @@ let score = 0, collected = 0, combo = 0, comboUntil = 0, missionTarget = 5, miss
 let speed = profile.speed, walls = !!profile.walls, interval = speed, acc = 0, lastFrame = 0;
 let countdownStart = 0, countdownStep = null, hurtStart = 0, hurtDone = false, eatPulse = 0;
 let particles = [], pops = [], roundStickers = [], roundSkins = [], bestAtStart = 0, toasts = [], toastTimer = 0;
-let friend = null, nextFriendAt = 0;
+let friends = [], gifts = [], nextFriendAt = 0, villain = null, nextVillainAt = 0;
 let sound = store.flag('sound', true), musicOn = store.flag('music', true);
 const active = kind => (effects[kind] || 0) > gameTime;
 const currentInterval = () => active('slow') ? Math.round(speed * 1.65) : speed;
@@ -114,7 +117,9 @@ const soundEffects = {
   turn: {notes: [[330, .035, 0, 440]], volume: .035},
   locked: {notes: [[330, .1, 0], [262, .16, .1]], volume: .1},
   friend: {notes: [[659, .1, 0], [784, .1, .1], [988, .1, .2], [784, .1, .3], [1175, .28, .4]], volume: .15},
-  hug: {notes: [[523, .1, 0], [659, .1, .08], [784, .1, .16], [1047, .32, .24]], volume: .17}
+  hug: {notes: [[523, .1, 0], [659, .1, .08], [784, .1, .16], [1047, .32, .24]], volume: .17},
+  gift: {notes: [[523, .08, 0], [784, .08, .08], [1047, .08, .16], [1319, .1, .24], [1568, .3, .32]], volume: .16},
+  villain: {notes: [[196, .18, 0], [185, .18, .18], [165, .42, .36]], wave: 'sawtooth', volume: .08}
 };
 let audio = null, sfxGain = null, musicGain = null, soundRevision = 0;
 
@@ -173,6 +178,18 @@ const melody = [
   [79, .5], [76, .5], [74, .5], [72, .5], [72, 1], [0, 1]
 ];
 const bassLine = [48, 45, 53, 48, 48, 45, 55, 48].flatMap(root => [[root, 1], [root + 7, 1], [root, 1], [root + 7, 1]]);
+// Huysuz Yılan bahçedeyken: La minör, daha hızlı ve gergin.
+const dangerMelody = [
+  [69, .5], [72, .5], [71, .5], [69, .5], [67, 1], [65, 1],
+  [64, .5], [65, .5], [67, .5], [64, .5], [62, 1], [64, 1],
+  [69, .5], [72, .5], [71, .5], [69, .5], [67, 1], [65, 1],
+  [68, .5], [69, .5], [68, .5], [65, .5], [64, 2]
+];
+const dangerBass = [45, 41, 45, 40].flatMap(root => [[root, 1], [root + 7, 1], [root, 1], [root + 3, 1]]);
+const tunes = {
+  happy: {melody, bass: bassLine, tempoScale: 1, wave: 'triangle', volume: .085, bassVolume: .11},
+  danger: {melody: dangerMelody, bass: dangerBass, tempoScale: 1.3, wave: 'square', volume: .05, bassVolume: .12}
+};
 
 function tone(midi, at, duration, wave, volume) {
   const oscillator = audio.createOscillator(), gain = audio.createGain();
@@ -187,13 +204,23 @@ function tone(midi, at, duration, wave, volume) {
 }
 
 const music = {
-  timer: null, playing: false, melAt: 0, bassAt: 0, melIdx: 0, bassIdx: 0,
-  tempo() { return 100 + (230 - speed) * .3; },
+  timer: null, playing: false, melAt: 0, bassAt: 0, melIdx: 0, bassIdx: 0, mode: 'happy',
+  tempo() { return (100 + (230 - speed) * .3) * tunes[this.mode].tempoScale; },
+  setMode(mode) {
+    if (this.mode === mode) return;
+    this.mode = mode;
+    if (!this.playing) return;
+    this.melIdx = 0; this.bassIdx = 0; this.melAt = this.bassAt = audio.currentTime + .25;
+    musicGain.gain.cancelScheduledValues(audio.currentTime);
+    musicGain.gain.setValueAtTime(musicGain.gain.value, audio.currentTime);
+    musicGain.gain.linearRampToValueAtTime(.15, audio.currentTime + .2);
+    musicGain.gain.linearRampToValueAtTime(1, audio.currentTime + .6);
+  },
   async start() {
     if (!musicOn || this.playing) return;
     try { ensureAudio(); if (audio.state !== 'running') await audio.resume(); } catch { return; }
     if (!musicOn || this.playing || audio.state !== 'running' || !inRound()) return;
-    this.playing = true; this.melIdx = 0; this.bassIdx = 0;
+    this.playing = true; this.melIdx = 0; this.bassIdx = 0; this.mode = villain ? 'danger' : 'happy';
     this.melAt = this.bassAt = audio.currentTime + .1;
     musicGain.gain.cancelScheduledValues(audio.currentTime);
     musicGain.gain.setValueAtTime(0, audio.currentTime);
@@ -209,16 +236,16 @@ const music = {
     musicGain.gain.linearRampToValueAtTime(0, audio.currentTime + .4);
   },
   schedule() {
-    const beat = 60 / this.tempo(), horizon = audio.currentTime + .4;
+    const tune = tunes[this.mode], beat = 60 / this.tempo(), horizon = audio.currentTime + .4;
     while (this.melAt < horizon) {
-      const [note, length] = melody[this.melIdx];
-      if (note) tone(note, this.melAt, length * beat * .85, 'triangle', .085);
-      this.melAt += length * beat; this.melIdx = (this.melIdx + 1) % melody.length;
+      const [note, length] = tune.melody[this.melIdx];
+      if (note) tone(note, this.melAt, length * beat * .85, tune.wave, tune.volume);
+      this.melAt += length * beat; this.melIdx = (this.melIdx + 1) % tune.melody.length;
     }
     while (this.bassAt < horizon) {
-      const [note, length] = bassLine[this.bassIdx];
-      if (note) tone(note, this.bassAt, length * beat * .8, 'sine', .11);
-      this.bassAt += length * beat; this.bassIdx = (this.bassIdx + 1) % bassLine.length;
+      const [note, length] = tune.bass[this.bassIdx];
+      if (note) tone(note, this.bassAt, length * beat * .8, 'sine', tune.bassVolume);
+      this.bassAt += length * beat; this.bassIdx = (this.bassIdx + 1) % tune.bass.length;
     }
   }
 };
@@ -250,7 +277,7 @@ function freeCell() {
   const free = [];
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const cell = {x, y};
-    if (!snake.some(p => same(p, cell)) && !foods.some(p => same(p, cell)) && !same(bonus, cell)) free.push(cell);
+    if (!snake.some(p => same(p, cell)) && !foods.some(p => same(p, cell)) && !same(bonus, cell) && !gifts.some(g => same(g, cell))) free.push(cell);
   }
   return free.length ? pick(free) : null;
 }
@@ -274,7 +301,7 @@ function reset() {
   foods = []; bonus = null; effects = {}; particles = []; pops = [];
   score = 0; collected = 0; combo = 0; comboUntil = 0; gameTime = 0; missionTarget = 5; missionsDone = 0;
   lives = MAX_LIVES; acc = 0; eatPulse = 0; roundStickers = []; roundSkins = []; bestAtStart = profile.best;
-  friend = null; scheduleFriend();
+  friends = []; gifts = []; scheduleFriend(); villain = null; scheduleVillain(true); $('#villain-chip').hidden = true;
   fruits.forEach(type => spawnFruit(type));
   updateHud();
 }
@@ -290,6 +317,7 @@ function candidate(d) {
 function tick() {
   prevSnake = snake.map(p => ({...p}));
   if (bonus && bonus.expires <= gameTime) bonus = null;
+  gifts = gifts.filter(g => g.expires > gameTime);
   if (comboUntil <= gameTime) combo = 0;
   if (queue.length) direction = queue.shift();
   let next = candidate(direction);
@@ -306,7 +334,9 @@ function tick() {
   if (fruitIndex >= 0) eat(foods.splice(fruitIndex, 1)[0], next); else snake.pop();
   if (state !== 'playing') return;
   if (same(bonus, next)) takeBonus(next);
-  checkHug();
+  const giftIndex = gifts.findIndex(g => same(g, next));
+  if (giftIndex >= 0) openGift(gifts.splice(giftIndex, 1)[0]);
+  checkHug(); checkBite();
   refill();
   updateHud();
 }
@@ -381,7 +411,7 @@ function stepHurt(now) {
 
 // Çarpışmadan sonra yılan yarı boyuyla boş bir yere, sağa bakacak şekilde konur.
 function respawn() {
-  const blocked = cell => foods.some(p => same(p, cell)) || same(bonus, cell);
+  const blocked = cell => foods.some(p => same(p, cell)) || same(bonus, cell) || gifts.some(g => same(g, cell));
   for (let length = Math.max(3, Math.min(12, Math.floor(snake.length / 2))); length >= 1; length--) {
     for (let attempt = 0; attempt < 400; attempt++) {
       const y = rand(N), x = length - 1 + rand(Math.max(1, N - 2 - length));
@@ -425,7 +455,7 @@ function home() {
 }
 
 function finish(win) {
-  state = 'over'; music.stop(); pauseBtn.disabled = true; hideCountdown(); queue = [];
+  state = 'over'; music.stop(); pauseBtn.disabled = true; hideCountdown(); queue = []; $('#villain-chip').hidden = true;
   profile.games++;
   if (profile.games >= 10) award('ten-games');
   const stars = win ? 3 : collected >= 22 ? 3 : collected >= 12 ? 2 : collected >= 5 ? 1 : 0;
@@ -454,41 +484,54 @@ function turn(name) {
   }
 }
 
-/* ---------- Sürpriz arkadaş ---------- */
-// Arada bahçeye giren, çarpınca zarar vermeyen bir yılan dostu; dokununca sarılma bonusu.
+/* ---------- Sürpriz arkadaşlar ve hediyeler ---------- */
+// Arada bahçeye giren, çarpınca zarar vermeyen yılan dostları: dokununca sarılma, giderken hediye.
 const friendNames = ['Boncuk', 'Fıstık', 'Pamuk', 'Limon', 'Zeytin', 'Badem', 'Şeker', 'Kiraz'];
 const inside = c => c.x >= 0 && c.x < N && c.y >= 0 && c.y < N;
 const friendInterval = () => Math.round(currentInterval() * 1.35);
+const shuffle = list => list.slice().sort(() => Math.random() - .5);
 function scheduleFriend() { nextFriendAt = gameTime + 22000 + rand(16000); }
 
-function spawnFriend() {
-  const side = rand(4), lane = 2 + rand(N - 4), length = 5;
-  const dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
-  const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
-  const body = Array.from({length}, (_, k) => ({x: head.x - dir.x * k, y: head.y - dir.y * k}));
-  friend = {body, prev: body.map(p => ({...p})), dir, skin: pick(skins.filter(s => s.id !== skin().id)), name: pick(friendNames), acc: 0, until: gameTime + 18000, leaving: false, hugged: false, happyUntil: 0};
-  toast(`🐍 Sürpriz! ${friend.name} bahçeye geldi, ona sarıl!`, 2400); playSound('friend');
+function spawnFriends() {
+  const count = Math.random() < .25 ? 2 : 1;
+  const sides = shuffle([0, 1, 2, 3]).slice(0, count), names = shuffle(friendNames), looks = shuffle(skins.filter(s => s.id !== skin().id));
+  const visit = {size: count, hugs: 0};
+  sides.forEach((side, k) => {
+    const lane = 2 + rand(N - 4), dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
+    const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+    const body = Array.from({length: 5}, (_, i) => ({x: head.x - dir.x * i, y: head.y - dir.y * i}));
+    friends.push({body, prev: body.map(p => ({...p})), dir, skin: looks[k], name: names[k], acc: -k * 450, until: gameTime + 18000, leaving: false, hugged: false, happyUntil: 0, visit, phase: 900 + k * 700});
+  });
+  toast(count === 2 ? `🐍🐍 Sürpriz! ${names[0]} ve ${names[1]} birlikte geldi!` : `🐍 Sürpriz! ${names[0]} bahçeye geldi, ona sarıl!`, 2400);
+  playSound('friend');
 }
 
-function updateFriend(dt) {
-  if (!friend) { if (gameTime >= nextFriendAt) spawnFriend(); return; }
-  friend.acc += dt;
-  while (friend && friend.acc >= friendInterval()) { friend.acc -= friendInterval(); stepFriend(); }
+function updateFriends(dt) {
+  if (!friends.length) { if (gameTime >= nextFriendAt && !villain) spawnFriends(); return; }
+  for (const f of [...friends]) {
+    f.acc += dt;
+    while (friends.includes(f) && f.acc >= friendInterval()) { f.acc -= friendInterval(); stepFriend(f); }
+  }
+  if (!friends.length) scheduleFriend();
 }
 
-function stepFriend() {
-  const f = friend, head = f.body[0];
-  if (!f.leaving && gameTime >= f.until) f.leaving = true;
+const blockedForFriend = n => !inside(n) || snake.some(p => same(p, n)) || friends.some(o => o.body.some(p => same(p, n))) || foods.some(p => same(p, n)) || same(bonus, n) || gifts.some(g => same(g, n));
+
+function stepFriend(f) {
+  const head = f.body[0], reverse = d => d.x === -f.dir.x && d.y === -f.dir.y;
+  if (!f.leaving && gameTime >= f.until) {
+    f.leaving = true;
+    if (!f.hugged && inside(head) && Math.random() < .4) dropGift(f, head);
+  }
   let dir = f.dir;
-  const reverse = d => d.x === -f.dir.x && d.y === -f.dir.y;
   if (f.leaving) {
-    if (f.body.every(c => !inside(c))) { friend = null; scheduleFriend(); return; }
+    if (f.body.every(c => !inside(c))) { friends.splice(friends.indexOf(f), 1); return; }
     if (inside(head)) {
       dir = [{d: dirs.left, dist: head.x}, {d: dirs.right, dist: N - 1 - head.x}, {d: dirs.up, dist: head.y}, {d: dirs.down, dist: N - 1 - head.y}]
         .filter(o => !reverse(o.d)).sort((a, b) => a.dist - b.dist)[0].d;
     }
   } else if (inside(head)) {
-    const ok = d => { const n = {x: head.x + d.x, y: head.y + d.y}; return inside(n) && !snake.some(p => same(p, n)) && !f.body.some(p => same(p, n)) && !foods.some(p => same(p, n)) && !same(bonus, n); };
+    const ok = d => !blockedForFriend({x: head.x + d.x, y: head.y + d.y});
     if (!(ok(f.dir) && Math.random() < .75)) {
       const good = Object.values(dirs).filter(d => !reverse(d) && (d.x !== f.dir.x || d.y !== f.dir.y) && ok(d));
       if (good.length) dir = pick(good); else if (!ok(f.dir)) f.leaving = true;
@@ -501,17 +544,38 @@ function stepFriend() {
 }
 
 function checkHug() {
-  if (!friend || friend.hugged || state !== 'playing') return;
-  if (friend.body.some(c => same(c, snake[0])) || snake.some(c => same(c, friend.body[0]))) hug();
+  if (state !== 'playing') return;
+  for (const f of friends) if (!f.hugged && (f.body.some(c => same(c, snake[0])) || snake.some(c => same(c, f.body[0])))) hug(f);
 }
 
-function hug() {
-  const f = friend;
-  f.hugged = true; f.leaving = false; f.until = gameTime + 1600; f.happyUntil = gameTime + 2600;
+function hug(f) {
+  f.hugged = true; f.leaving = false; f.until = gameTime + 1600; f.happyUntil = gameTime + 2600; f.visit.hugs++;
   addScore(30);
   pops.push({x: snake[0].x, y: snake[0].y, text: '+30 💕', color: '#e35a8c', born: performance.now()});
   heartBurst(snake[0]);
   toast(`💕 ${f.name} sana sarıldı! +30`, 2200); playSound('hug'); buzz([20, 30, 20, 30]); award('friend');
+  if (f.visit.size === 2 && f.visit.hugs === 2) award('twins');
+  dropGift(f, f.body[0]);
+}
+
+function dropGift(f, cell) {
+  if (gifts.length >= 3) return;
+  const spots = [cell, ...Object.values(dirs).map(d => ({x: cell.x + d.x, y: cell.y + d.y}))]
+    .filter(c => inside(c) && !snake.some(p => same(p, c)) && !foods.some(p => same(p, c)) && !same(bonus, c) && !gifts.some(g => same(g, c)));
+  const spot = spots[0] || freeCell();
+  if (!spot) return;
+  gifts.push({x: spot.x, y: spot.y, from: f.name, expires: gameTime + 15000});
+  toast(`🎁 ${f.name} sana bir hediye bıraktı!`, 2000); playSound('spawn');
+}
+
+function openGift(g) {
+  let text;
+  if (lives < MAX_LIVES && Math.random() < .5) { lives = Math.min(MAX_LIVES, lives + 1); pulse(heartsEl, 'pulse'); text = '💖 bir kalp'; }
+  else if (Math.random() < .4) { addScore(50); text = '+50 puan'; }
+  else { const type = pick(bonuses.filter(b => b.kind !== 'heart')); effects[type.kind] = gameTime + type.duration; text = `${type.icon} ${type.name}`; }
+  pops.push({x: g.x, y: g.y, text: '🎁', icon: true, color: '#e35a8c', born: performance.now()});
+  confetti(30);
+  toast(`🎁 Hediyeden ${text} çıktı!`, 2200); playSound('gift'); buzz([20, 30, 20]); award('gift');
 }
 
 function heartBurst(cell) {
@@ -519,6 +583,73 @@ function heartBurst(cell) {
     const a = Math.random() * Math.PI * 2, sp = .05 + Math.random() * .12;
     particles.push({x: (cell.x + .5) * S, y: (cell.y + .5) * S, vx: Math.cos(a) * sp, vy: -.08 - Math.random() * .12, g: .00012, life: 1300, max: 1300, size: 4 + Math.random() * 4, color: pick(['#ff6f9c', '#ff8fb1', '#e35a8c', '#ffb3d1']), shape: 'heart'});
   }
+}
+
+/* ---------- Huysuz Yılan ---------- */
+// Kaşları çatık kara yılan: yavaşça kovalar, dokunursa bir kalp alır; kalkan onu korkutur, kaçan ödül kazanır.
+const villainSkin = {id: 'villain', name: 'Huysuz Yılan', head: '#3d3d50', body: ['#2f2f3a', '#3a3a47'], spot: '#5a5a70', pattern: 'stripes', accessory: 'none'};
+const villainInterval = () => Math.round(currentInterval() * 1.5);
+function scheduleVillain(first) { nextVillainAt = gameTime + (first ? 45000 : 50000) + rand(25000); }
+
+function spawnVillain() {
+  const side = rand(4), lane = 2 + rand(N - 4), dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
+  const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+  const body = Array.from({length: 6}, (_, i) => ({x: head.x - dir.x * i, y: head.y - dir.y * i}));
+  villain = {body, prev: body.map(p => ({...p})), dir, acc: 0, until: gameTime + 15000, leaving: false, bit: false};
+  $('#villain-chip').hidden = false;
+  toast('😈 Dikkat! Huysuz Yılan geldi, ondan kaç!', 2600); playSound('villain'); buzz([60, 40, 60]); music.setMode('danger');
+}
+
+function updateVillain(dt) {
+  if (!villain) { if (gameTime >= nextVillainAt && !friends.length) spawnVillain(); return; }
+  villain.acc += dt;
+  while (villain && state === 'playing' && villain.acc >= villainInterval()) { villain.acc -= villainInterval(); stepVillain(); }
+}
+
+function stepVillain() {
+  const v = villain, head = v.body[0], reverse = d => d.x === -v.dir.x && d.y === -v.dir.y;
+  if (!v.leaving && gameTime >= v.until) v.leaving = true;
+  let dir = v.dir;
+  if (v.leaving) {
+    if (v.body.every(c => !inside(c))) { villainLeaves(); return; }
+    if (inside(head)) {
+      dir = [{d: dirs.left, dist: head.x}, {d: dirs.right, dist: N - 1 - head.x}, {d: dirs.up, dist: head.y}, {d: dirs.down, dist: N - 1 - head.y}]
+        .filter(o => !reverse(o.d)).sort((a, b) => a.dist - b.dist)[0].d;
+    }
+  } else if (inside(head)) {
+    const free = d => { const n = {x: head.x + d.x, y: head.y + d.y}; return inside(n) && !v.body.some(p => same(p, n)); };
+    const options = Object.values(dirs).filter(d => !reverse(d) && free(d));
+    if (!options.length) v.leaving = true;
+    else {
+      const target = snake[0], gap = d => Math.abs(head.x + d.x - target.x) + Math.abs(head.y + d.y - target.y);
+      options.sort((a, b) => gap(a) - gap(b));
+      dir = Math.random() < .7 ? options[0] : pick(options);
+    }
+  }
+  v.dir = dir;
+  v.prev = v.body.map(p => ({...p}));
+  v.body.unshift({x: head.x + dir.x, y: head.y + dir.y}); v.body.pop();
+  checkBite();
+}
+
+function villainLeaves() {
+  const bit = villain.bit;
+  villain = null; $('#villain-chip').hidden = true; scheduleVillain(false); music.setMode('happy');
+  if (bit) { toast('😮‍💨 Huysuz Yılan gitti.', 2000); return; }
+  addScore(40); confetti(40);
+  toast('🎉 Huysuz Yılan pes etti, kaçmayı başardın! +40', 2600); playSound('mission'); award('escape');
+}
+
+function checkBite() {
+  if (!villain || villain.leaving || state !== 'playing') return;
+  if (!villain.body.some(c => same(c, snake[0])) && !snake.some(c => same(c, villain.body[0]))) return;
+  if (active('shield')) {
+    effects.shield = 0; villain.leaving = true;
+    toast("🛡️ Kalkan Huysuz Yılan'ı korkuttu!", 2000); playSound('rescue'); return;
+  }
+  villain.bit = true; villain.leaving = true;
+  toast('😈 Huysuz Yılan seni ısırdı!', 1800);
+  hurt();
 }
 
 /* ---------- Arayüz ---------- */
@@ -639,16 +770,15 @@ function drawFoods(now) {
   });
 }
 
-function drawBonus(now) {
-  const cx = bonus.x * S + S / 2, cy = bonus.y * S + S / 2, beat = .5 + Math.sin(now / 180) * .5;
-  const remain = Math.max(0, (bonus.expires - gameTime) / 12000);
+function drawPickup(item, color, icon, remain, now) {
+  const cx = item.x * S + S / 2, cy = item.y * S + S / 2, beat = .5 + Math.sin(now / 180) * .5;
   const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, 22 + beat * 8);
-  glow.addColorStop(0, bonus.type.color + '77'); glow.addColorStop(1, bonus.type.color + '00');
+  glow.addColorStop(0, color + '77'); glow.addColorStop(1, color + '00');
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, 32, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fffdf2'; ctx.beginPath(); ctx.arc(cx, cy, 17, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = bonus.type.color; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.arc(cx, cy, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * remain); ctx.stroke();
-  drawEmoji(bonus.type.icon, cx, cy + Math.sin(now / 200) * 1.5, 22);
+  ctx.strokeStyle = color; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(cx, cy, 17, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp(remain, 0, 1)); ctx.stroke();
+  drawEmoji(icon, cx, cy + Math.sin(now / 200) * 1.5, 22);
 }
 
 function drawSnow(now) {
@@ -710,7 +840,8 @@ function drawCreature(cells, prev, t, sk, o) {
   };
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   if (o.star) { const glow = `rgba(255,214,77,${.35 + Math.sin(o.now / 120) * .15})`; pass(i => width(i) + 16, () => glow); }
-  pass(i => width(i) + 5, () => 'rgba(45,75,30,.45)');
+  if (o.evil) { const aura = `rgba(220,50,70,${.16 + Math.sin(o.now / 150) * .08})`; pass(i => width(i) + 14, () => aura); }
+  pass(i => width(i) + 5, () => o.evil ? 'rgba(10,10,16,.6)' : 'rgba(45,75,30,.45)');
   pass(width, i => segColor(sk, i, o.now));
   drawPattern(sk, pts, width, linked, o.now);
   drawHead(pts, sk, scale, o);
@@ -770,10 +901,12 @@ function drawHead(pts, sk, scale, o) {
     ctx.fillStyle = 'rgba(120,205,225,.28)'; ctx.strokeStyle = 'rgba(80,170,200,.85)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
-  ctx.fillStyle = sk.head; ctx.strokeStyle = 'rgba(45,75,30,.45)'; ctx.lineWidth = 2.5;
+  ctx.fillStyle = sk.head; ctx.strokeStyle = o.evil ? 'rgba(10,10,16,.6)' : 'rgba(45,75,30,.45)'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.ellipse(0, 0, r * 1.06, r, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = 'rgba(255,110,150,.45)';
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-r * .04, side * r * .65, r * .15, 0, Math.PI * 2); ctx.fill(); }
+  if (!o.evil) {
+    ctx.fillStyle = 'rgba(255,110,150,.45)';
+    for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-r * .04, side * r * .65, r * .15, 0, Math.PI * 2); ctx.fill(); }
+  }
   // Gözler: bakış yönü, kırpma, mutlu kapalı gözler, çarpınca X.
   let look = {x: r * .11, y: 0};
   if (o.lookAt) {
@@ -793,12 +926,23 @@ function drawHead(pts, sk, scale, o) {
     if (o.happy) { ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ex, ey, r * .28, -Math.PI / 3, Math.PI / 3); ctx.stroke(); continue; }
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(ex, ey, r * .35, blink ? r * .05 : r * .35, 0, 0, Math.PI * 2); ctx.fill();
     if (!blink) {
-      ctx.fillStyle = '#2d3b22'; ctx.beginPath(); ctx.arc(ex + look.x, ey + look.y, r * .185, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = o.evil ? '#e03131' : '#2d3b22'; ctx.beginPath(); ctx.arc(ex + look.x, ey + look.y, r * .185, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + look.x + r * .07, ey + look.y - r * .08, r * .065, 0, Math.PI * 2); ctx.fill();
     }
   }
+  if (o.evil) {
+    // Çatık kaşlar: iç uçlar göze yakın, dış uçlar yukarıda.
+    ctx.strokeStyle = '#08080c'; ctx.lineWidth = r * .2; ctx.lineCap = 'round';
+    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(r * .46, side * r * .14); ctx.lineTo(r * .7, side * r * .76); ctx.stroke(); }
+    ctx.strokeStyle = '#0b0b10'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(r * .85, 0, r * .28, Math.PI - Math.PI / 3, Math.PI + Math.PI / 3); ctx.stroke();
+  }
   ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 2.5;
-  if ((o.eatPulse || 0) > .05) {
+  if (o.evil) {
+    if ((now + (o.phase || 0)) % 1900 < 260) {
+      ctx.strokeStyle = '#e03131'; ctx.lineWidth = 3; ctx.beginPath();
+      ctx.moveTo(r * .9, 0); ctx.lineTo(r * 1.45, 0); ctx.lineTo(r * 1.68, -r * .17); ctx.moveTo(r * 1.45, 0); ctx.lineTo(r * 1.68, r * .17); ctx.stroke();
+    }
+  } else if ((o.eatPulse || 0) > .05) {
     ctx.fillStyle = '#7a2a3a'; ctx.beginPath(); ctx.ellipse(r * .65, 0, r * .17 + o.eatPulse * r * .09, r * .15 + o.eatPulse * r * .11, 0, 0, Math.PI * 2); ctx.fill();
   } else if (o.hurt) {
     ctx.beginPath(); ctx.arc(r * .65, 0, r * .11, 0, Math.PI * 2); ctx.stroke();
@@ -867,9 +1011,11 @@ function draw(now) {
   ctx.drawImage(background(), 0, 0, SIZE, SIZE);
   if (walls) drawFence();
   drawFoods(now);
-  if (bonus) drawBonus(now);
+  if (bonus) drawPickup(bonus, bonus.type.color, bonus.type.icon, (bonus.expires - gameTime) / 12000, now);
+  for (const g of gifts) drawPickup(g, '#e35a8c', '🎁', (g.expires - gameTime) / 15000, now);
   if (active('slow')) drawSnow(now);
-  if (friend) drawCreature(friend.body, friend.prev, clamp(friend.acc / friendInterval(), 0, 1), friend.skin, {now, scale: .8, dir: friend.dir, happy: gameTime < friend.happyUntil, lookAt: {x: (snake[0].x + .5) * S, y: (snake[0].y + .5) * S}, phase: 1300});
+  for (const f of friends) drawCreature(f.body, f.prev, clamp(f.acc / friendInterval(), 0, 1), f.skin, {now, scale: .8, dir: f.dir, happy: gameTime < f.happyUntil, lookAt: {x: (snake[0].x + .5) * S, y: (snake[0].y + .5) * S}, phase: f.phase});
+  if (villain) drawCreature(villain.body, villain.prev, clamp(villain.acc / villainInterval(), 0, 1), villainSkin, {now, scale: .9, dir: villain.dir, evil: true, lookAt: {x: (snake[0].x + .5) * S, y: (snake[0].y + .5) * S}, phase: 500});
   drawCreature(snake, prevSnake, t, skin(), {now, dir: direction, hurt: state === 'hurt', eatPulse, shield: active('shield'), star: active('star')});
   drawParticles(); drawPops(now);
   if (hurtAge < 700) { ctx.fillStyle = `rgba(255,120,150,${(1 - hurtAge / 700) * .35})`; ctx.fillRect(-10, -10, SIZE + 20, SIZE + 20); }
@@ -889,7 +1035,8 @@ function frame(now) {
   if (state === 'playing') {
     gameTime += dt; acc += dt; interval = currentInterval();
     for (let guard = 0; acc >= interval && state === 'playing' && guard < 4; guard++) { acc -= interval; tick(); }
-    if (state === 'playing') updateFriend(dt);
+    if (state === 'playing') updateFriends(dt);
+    if (state === 'playing') updateVillain(dt);
   } else if (state === 'countdown') stepCountdown(now);
   else if (state === 'hurt') stepHurt(now);
   eatPulse = Math.max(0, eatPulse - dt / 260);
