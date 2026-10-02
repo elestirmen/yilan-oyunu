@@ -138,6 +138,22 @@ h2{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--muted);text-transf
 @keyframes bob{50%{transform:translateY(-8px) rotate(6deg)}}
 @keyframes countPop{from{transform:scale(1.7);opacity:0}}
 @keyframes dangerPulse{50%{transform:scale(1.1)}}
+/* Gece bahçesi */
+body.night{background:
+  radial-gradient(1.6px 1.6px at 12% 18%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 28% 42%,#fff 60%,transparent 62%),
+  radial-gradient(1.8px 1.8px at 47% 12%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 63% 30%,#fff 60%,transparent 62%),
+  radial-gradient(1.6px 1.6px at 78% 8%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 88% 36%,#fff 60%,transparent 62%),
+  radial-gradient(1.4px 1.4px at 8% 62%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 36% 70%,#fff 60%,transparent 62%),
+  radial-gradient(1.6px 1.6px at 70% 58%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 92% 76%,#fff 60%,transparent 62%),
+  radial-gradient(1.4px 1.4px at 55% 88%,#fff 60%,transparent 62%),radial-gradient(1.2px 1.2px at 20% 90%,#fff 60%,transparent 62%),
+  linear-gradient(180deg,#0f1b3a 0%,#1a2b52 55%,#17352f 100%) fixed}
+body.night .brand,body.night .mission-row{color:#eef5df}body.night .mission-row b{color:#ffe08a}
+body.night .board-wrap{border-color:#2a4660;box-shadow:0 10px 0 #1b3148,0 20px 40px #0008;background:#35624a}
+body.night .dpad button{background:#1e2f4f;border-color:#2f4a73;box-shadow:0 6px 0 #122039;color:#dce9ff}
+body.night .dpad button:active,body.night .dpad button.pressed{background:#2a4068;box-shadow:0 1px 0 #122039}
+body.night .dpad-center{filter:drop-shadow(0 0 6px #fff8)}
+body.night progress,body.night progress::-webkit-progress-bar{background:#1e2f4f}
+body.night .brand-icon,body.night .score-pill,body.night .round-btn{box-shadow:0 4px 0 #1b3148}
 
 /* Yerleşim: dikey tablet/telefon → tahta üstte, oklar altta */
 @media (orientation:portrait){.stage{grid-template-rows:auto auto}}
