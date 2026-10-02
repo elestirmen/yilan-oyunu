@@ -35,12 +35,12 @@ const bonuses = [
   {kind: 'heart', icon: '💖', name: 'Kalp', detail: 'Bir kalbin geri geldi!', duration: 0, color: '#ff6f9c'}
 ];
 const skins = [
-  {id: 'green', name: 'Yeşil', head: '#5e9a3c', body: ['#7fbf55', '#95cf6b'], spot: '#c8eaa8', unlock: 0},
-  {id: 'pink', name: 'Pembe', head: '#e2588c', body: ['#f58bb4', '#f9a6c6'], spot: '#ffe0ec', unlock: 0},
-  {id: 'purple', name: 'Mor', head: '#8a63c9', body: ['#ab8de0', '#bea4ea'], spot: '#eadfff', unlock: 15},
-  {id: 'ocean', name: 'Deniz', head: '#3691b8', body: ['#5ebfdf', '#7fcfe8'], spot: '#d9f3fb', unlock: 40},
-  {id: 'rainbow', name: 'Gökkuşağı', head: '#ff8a5c', rainbow: true, spot: '#ffffff', unlock: 80},
-  {id: 'gold', name: 'Altın', head: '#c9951f', body: ['#e8b93c', '#f3cc5c'], spot: '#fff2c4', unlock: 150}
+  {id: 'green', name: 'Yeşil', badge: '🌼', head: '#5e9a3c', body: ['#7fbf55', '#95cf6b'], spot: '#c8eaa8', pattern: 'spots', accessory: 'flower', unlock: 0},
+  {id: 'pink', name: 'Pembe', badge: '🎀', head: '#e2588c', body: ['#f58bb4', '#f9a6c6'], spot: '#fff0f5', pattern: 'hearts', accessory: 'bow', unlock: 0},
+  {id: 'purple', name: 'Mor', badge: '🧙', head: '#8a63c9', body: ['#ab8de0', '#bea4ea'], spot: '#fff3b0', pattern: 'stars', accessory: 'hat', unlock: 15},
+  {id: 'ocean', name: 'Deniz', badge: '⚓', head: '#3691b8', body: ['#5ebfdf', '#7fcfe8'], spot: '#eaf8fd', pattern: 'stripes', accessory: 'sailor', unlock: 40},
+  {id: 'rainbow', name: 'Gökkuşağı', badge: '✨', head: '#ff8a5c', rainbow: true, spot: '#ffffff', pattern: 'none', accessory: 'sparkles', unlock: 80},
+  {id: 'gold', name: 'Altın', badge: '👑', head: '#c9951f', body: ['#e8b93c', '#f3cc5c'], spot: '#fff8dc', pattern: 'sparkle', accessory: 'crown', unlock: 150}
 ];
 const stickers = [
   {id: 'first', icon: '🍎', name: 'İlk Lokma', how: 'İlk meyveni topla'},
@@ -60,6 +60,7 @@ const stickers = [
   {id: 'record', icon: '🏆', name: 'Rekor Kıran', how: 'Kendi rekorunu geç'},
   {id: 'stars3', icon: '🌟', name: 'Üç Yıldız', how: 'Bir turda 3 yıldız kazan'},
   {id: 'rainbow', icon: '🌈', name: 'Gökkuşağı', how: 'Gökkuşağı yılanını aç'},
+  {id: 'friend', icon: '💕', name: 'Can Dostu', how: 'Sürpriz arkadaşa sarıl'},
   {id: 'ten-games', icon: '🎈', name: 'Bahçe Dostu', how: '10 tur oyna'}
 ];
 const praise = ['Harikasın Lara!', 'Süpersin!', 'Vay canına!', 'Muhteşem!', 'Bravo!', 'İşte bu!', 'Çok iyisin!'];
@@ -81,6 +82,7 @@ let score = 0, collected = 0, combo = 0, comboUntil = 0, missionTarget = 5, miss
 let speed = profile.speed, walls = !!profile.walls, interval = speed, acc = 0, lastFrame = 0;
 let countdownStart = 0, countdownStep = null, hurtStart = 0, hurtDone = false, eatPulse = 0;
 let particles = [], pops = [], roundStickers = [], roundSkins = [], bestAtStart = 0, toasts = [], toastTimer = 0;
+let friend = null, nextFriendAt = 0;
 let sound = store.flag('sound', true), musicOn = store.flag('music', true);
 const active = kind => (effects[kind] || 0) > gameTime;
 const currentInterval = () => active('slow') ? Math.round(speed * 1.65) : speed;
@@ -110,7 +112,9 @@ const soundEffects = {
   pause: {notes: [[659, .1, 0], [523, .14, .1]], volume: .11},
   resume: {notes: [[523, .1, 0], [659, .14, .1]], volume: .11},
   turn: {notes: [[330, .035, 0, 440]], volume: .035},
-  locked: {notes: [[330, .1, 0], [262, .16, .1]], volume: .1}
+  locked: {notes: [[330, .1, 0], [262, .16, .1]], volume: .1},
+  friend: {notes: [[659, .1, 0], [784, .1, .1], [988, .1, .2], [784, .1, .3], [1175, .28, .4]], volume: .15},
+  hug: {notes: [[523, .1, 0], [659, .1, .08], [784, .1, .16], [1047, .32, .24]], volume: .17}
 };
 let audio = null, sfxGain = null, musicGain = null, soundRevision = 0;
 
@@ -270,6 +274,7 @@ function reset() {
   foods = []; bonus = null; effects = {}; particles = []; pops = [];
   score = 0; collected = 0; combo = 0; comboUntil = 0; gameTime = 0; missionTarget = 5; missionsDone = 0;
   lives = MAX_LIVES; acc = 0; eatPulse = 0; roundStickers = []; roundSkins = []; bestAtStart = profile.best;
+  friend = null; scheduleFriend();
   fruits.forEach(type => spawnFruit(type));
   updateHud();
 }
@@ -301,6 +306,7 @@ function tick() {
   if (fruitIndex >= 0) eat(foods.splice(fruitIndex, 1)[0], next); else snake.pop();
   if (state !== 'playing') return;
   if (same(bonus, next)) takeBonus(next);
+  checkHug();
   refill();
   updateHud();
 }
@@ -448,6 +454,73 @@ function turn(name) {
   }
 }
 
+/* ---------- Sürpriz arkadaş ---------- */
+// Arada bahçeye giren, çarpınca zarar vermeyen bir yılan dostu; dokununca sarılma bonusu.
+const friendNames = ['Boncuk', 'Fıstık', 'Pamuk', 'Limon', 'Zeytin', 'Badem', 'Şeker', 'Kiraz'];
+const inside = c => c.x >= 0 && c.x < N && c.y >= 0 && c.y < N;
+const friendInterval = () => Math.round(currentInterval() * 1.35);
+function scheduleFriend() { nextFriendAt = gameTime + 22000 + rand(16000); }
+
+function spawnFriend() {
+  const side = rand(4), lane = 2 + rand(N - 4), length = 5;
+  const dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
+  const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+  const body = Array.from({length}, (_, k) => ({x: head.x - dir.x * k, y: head.y - dir.y * k}));
+  friend = {body, prev: body.map(p => ({...p})), dir, skin: pick(skins.filter(s => s.id !== skin().id)), name: pick(friendNames), acc: 0, until: gameTime + 18000, leaving: false, hugged: false, happyUntil: 0};
+  toast(`🐍 Sürpriz! ${friend.name} bahçeye geldi, ona sarıl!`, 2400); playSound('friend');
+}
+
+function updateFriend(dt) {
+  if (!friend) { if (gameTime >= nextFriendAt) spawnFriend(); return; }
+  friend.acc += dt;
+  while (friend && friend.acc >= friendInterval()) { friend.acc -= friendInterval(); stepFriend(); }
+}
+
+function stepFriend() {
+  const f = friend, head = f.body[0];
+  if (!f.leaving && gameTime >= f.until) f.leaving = true;
+  let dir = f.dir;
+  const reverse = d => d.x === -f.dir.x && d.y === -f.dir.y;
+  if (f.leaving) {
+    if (f.body.every(c => !inside(c))) { friend = null; scheduleFriend(); return; }
+    if (inside(head)) {
+      dir = [{d: dirs.left, dist: head.x}, {d: dirs.right, dist: N - 1 - head.x}, {d: dirs.up, dist: head.y}, {d: dirs.down, dist: N - 1 - head.y}]
+        .filter(o => !reverse(o.d)).sort((a, b) => a.dist - b.dist)[0].d;
+    }
+  } else if (inside(head)) {
+    const ok = d => { const n = {x: head.x + d.x, y: head.y + d.y}; return inside(n) && !snake.some(p => same(p, n)) && !f.body.some(p => same(p, n)) && !foods.some(p => same(p, n)) && !same(bonus, n); };
+    if (!(ok(f.dir) && Math.random() < .75)) {
+      const good = Object.values(dirs).filter(d => !reverse(d) && (d.x !== f.dir.x || d.y !== f.dir.y) && ok(d));
+      if (good.length) dir = pick(good); else if (!ok(f.dir)) f.leaving = true;
+    }
+  }
+  f.dir = dir;
+  f.prev = f.body.map(p => ({...p}));
+  f.body.unshift({x: head.x + dir.x, y: head.y + dir.y}); f.body.pop();
+  checkHug();
+}
+
+function checkHug() {
+  if (!friend || friend.hugged || state !== 'playing') return;
+  if (friend.body.some(c => same(c, snake[0])) || snake.some(c => same(c, friend.body[0]))) hug();
+}
+
+function hug() {
+  const f = friend;
+  f.hugged = true; f.leaving = false; f.until = gameTime + 1600; f.happyUntil = gameTime + 2600;
+  addScore(30);
+  pops.push({x: snake[0].x, y: snake[0].y, text: '+30 💕', color: '#e35a8c', born: performance.now()});
+  heartBurst(snake[0]);
+  toast(`💕 ${f.name} sana sarıldı! +30`, 2200); playSound('hug'); buzz([20, 30, 20, 30]); award('friend');
+}
+
+function heartBurst(cell) {
+  for (let i = 0; i < 14; i++) {
+    const a = Math.random() * Math.PI * 2, sp = .05 + Math.random() * .12;
+    particles.push({x: (cell.x + .5) * S, y: (cell.y + .5) * S, vx: Math.cos(a) * sp, vy: -.08 - Math.random() * .12, g: .00012, life: 1300, max: 1300, size: 4 + Math.random() * 4, color: pick(['#ff6f9c', '#ff8fb1', '#e35a8c', '#ffb3d1']), shape: 'heart'});
+  }
+}
+
 /* ---------- Arayüz ---------- */
 function updateHud() {
   scoreEl.textContent = score;
@@ -489,11 +562,11 @@ function renderSkins() {
     const locked = s.unlock > profile.totalFruit;
     const body = s.rainbow ? 'linear-gradient(90deg,#ff6b6b,#ffb347,#ffe66d,#8ce99a,#74c0fc,#b197fc)' : s.body[0];
     return `<button type="button" class="skin${locked ? ' locked' : ''}" role="radio" aria-checked="${s.id === skin().id}" data-skin="${s.id}" style="--c1:${body};--head:${s.head}">` +
-      `<span class="mini"></span><span>${locked ? '🔒 ' : ''}${s.name}</span>${locked ? `<small>${s.unlock} meyve</small>` : ''}</button>`;
+      `<span class="mini"></span><span>${locked ? '🔒' : s.badge} ${s.name}</span>${locked ? `<small>${s.unlock} meyve</small>` : ''}</button>`;
   }).join('');
   const next = skins.find(s => s.unlock > profile.totalFruit);
   $('#next-skin').textContent = next
-    ? `🍎 ${next.name} yılan için ${next.unlock - profile.totalFruit} meyve daha! (${profile.totalFruit} / ${next.unlock})`
+    ? `🍎 ${next.badge} ${next.name} yılan için ${next.unlock - profile.totalFruit} meyve daha! (${profile.totalFruit} / ${next.unlock})`
     : '🎉 Bütün yılanları açtın!';
 }
 
@@ -589,15 +662,44 @@ function drawSnow(now) {
 
 const segColor = (sk, i, now) => sk.rainbow ? `hsl(${((i * 24 - now / 10) % 360 + 360) % 360} 85% 62%)` : sk.body[i % 2];
 
-function drawSnake(now, t) {
-  const sk = skin(), len = snake.length;
-  const pts = snake.map((c, i) => {
-    const p = prevSnake[i];
+function heartPath(x, y, s) {
+  ctx.beginPath(); ctx.moveTo(x, y + s * .55);
+  ctx.bezierCurveTo(x - s * 1.1, y - s * .25, x - s * .55, y - s * 1.05, x, y - s * .45);
+  ctx.bezierCurveTo(x + s * .55, y - s * 1.05, x + s * 1.1, y - s * .25, x, y + s * .55);
+  ctx.closePath();
+}
+function sparklePath(x, y, s) {
+  ctx.beginPath();
+  for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 - Math.PI / 2, rad = k % 2 ? s * .38 : s; ctx.lineTo(x + Math.cos(a) * rad, y + Math.sin(a) * rad); }
+  ctx.closePath();
+}
+
+// Gövde deseni: benek, kalp, yıldız, çizgi ya da pırıltı.
+function drawPattern(sk, pts, width, linked, now) {
+  ctx.fillStyle = sk.spot; ctx.strokeStyle = sk.spot; ctx.lineCap = 'round';
+  for (let i = 2; i < pts.length; i += 2) {
+    const {x, y} = pts[i], w = width(i);
+    if (sk.pattern === 'spots') { ctx.beginPath(); ctx.arc(x, y, w * .18, 0, Math.PI * 2); ctx.fill(); }
+    else if (sk.pattern === 'hearts') { heartPath(x, y, w * .2); ctx.fill(); }
+    else if (sk.pattern === 'stars') { sparklePath(x, y, w * .26); ctx.fill(); }
+    else if (sk.pattern === 'stripes' && linked(i)) {
+      const dx = pts[i - 1].x - x, dy = pts[i - 1].y - y, m = Math.hypot(dx, dy) || 1, nx = -dy / m, ny = dx / m;
+      ctx.lineWidth = w * .2; ctx.beginPath(); ctx.moveTo(x - nx * w * .36, y - ny * w * .36); ctx.lineTo(x + nx * w * .36, y + ny * w * .36); ctx.stroke();
+    }
+    else if (sk.pattern === 'sparkle') { ctx.globalAlpha = .55 + .45 * Math.sin(now / 150 + i); sparklePath(x, y, w * .24); ctx.fill(); ctx.globalAlpha = 1; }
+  }
+}
+
+// Hem Lara'nın yılanı hem sürpriz arkadaş bu çiziciyle çizilir.
+function drawCreature(cells, prev, t, sk, o) {
+  const scale = o.scale || 1, len = cells.length;
+  const pts = cells.map((c, i) => {
+    const p = prev[i];
     if (!p || Math.abs(p.x - c.x) > 1 || Math.abs(p.y - c.y) > 1) return {x: (c.x + .5) * S, y: (c.y + .5) * S};
     return {x: (p.x + (c.x - p.x) * t + .5) * S, y: (p.y + (c.y - p.y) * t + .5) * S};
   });
-  const width = i => S * .72 * (i >= len - 3 ? .78 + .07 * (len - 1 - i) : 1);
-  const linked = i => Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) < S * 1.6;
+  const width = i => S * .72 * scale * (i >= len - 3 ? .78 + .07 * (len - 1 - i) : 1);
+  const linked = i => i > 0 && Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) < S * 1.6;
   const pass = (w, color) => {
     for (let i = len - 1; i >= 1; i--) {
       ctx.strokeStyle = ctx.fillStyle = color ? color(i) : ctx.strokeStyle;
@@ -607,59 +709,109 @@ function drawSnake(now, t) {
     }
   };
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  if (active('star')) { const glow = `rgba(255,214,77,${.35 + Math.sin(now / 120) * .15})`; pass(i => width(i) + 16, () => glow); }
+  if (o.star) { const glow = `rgba(255,214,77,${.35 + Math.sin(o.now / 120) * .15})`; pass(i => width(i) + 16, () => glow); }
   pass(i => width(i) + 5, () => 'rgba(45,75,30,.45)');
-  pass(width, i => segColor(sk, i, now));
-  if (!sk.rainbow) {
-    ctx.fillStyle = sk.spot;
-    for (let i = 2; i < len; i += 2) { ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, width(i) * .18, 0, Math.PI * 2); ctx.fill(); }
-  }
-  drawHead(pts, sk, now);
+  pass(width, i => segColor(sk, i, o.now));
+  drawPattern(sk, pts, width, linked, o.now);
+  drawHead(pts, sk, scale, o);
 }
 
-function drawHead(pts, sk, now) {
-  const h = pts[0]; let d = direction;
+// Aksesuarlar kafanın üstüne, yüz çizildikten sonra konur (tepeden bakış: şapka kafanın arka yarısında).
+function drawAccessory(sk, r, now) {
+  const a = sk.accessory;
+  if (a === 'hat') {
+    ctx.fillStyle = '#5b3fa0'; ctx.beginPath(); ctx.ellipse(-r * .3, 0, r * .3, r * .98, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#6d4fc2'; ctx.strokeStyle = '#4a3390'; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-r * .3, -r * .7); ctx.lineTo(-r * 2, 0); ctx.lineTo(-r * .3, r * .7); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffe066'; sparklePath(-r * 1.05, 0, r * .22); ctx.fill();
+  } else if (a === 'crown') {
+    ctx.fillStyle = '#ffe066'; ctx.strokeStyle = '#a0701a'; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(-r * .15, -r * .72); ctx.lineTo(-r * .95, -r * .78); ctx.lineTo(-r * .7, -r * .36); ctx.lineTo(-r * 1.15, 0);
+    ctx.lineTo(-r * .7, r * .36); ctx.lineTo(-r * .95, r * .78); ctx.lineTo(-r * .15, r * .72); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#e4554f'; ctx.beginPath(); ctx.arc(-r * .55, 0, r * .14, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4fae9b'; for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-r * .5, side * r * .42, r * .09, 0, Math.PI * 2); ctx.fill(); }
+  } else if (a === 'sailor') {
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(45,75,30,.35)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(-r * .2, 0, r * .82, Math.PI / 2, Math.PI * 1.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#2f7fb8'; ctx.lineWidth = r * .2; ctx.beginPath(); ctx.arc(-r * .2, 0, r * .62, Math.PI * .6, Math.PI * 1.4); ctx.stroke();
+    ctx.fillStyle = '#e4554f'; ctx.beginPath(); ctx.arc(-r * .95, 0, r * .14, 0, Math.PI * 2); ctx.fill();
+  } else if (a === 'bow') {
+    ctx.save(); ctx.translate(-r * .3, -r * .82); ctx.rotate(-.35);
+    ctx.fillStyle = '#ff4f8b'; ctx.strokeStyle = '#c2255c'; ctx.lineWidth = 1.2; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(-r * .72, -r * .42); ctx.lineTo(-r * .66, r * .38); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(r * .72, -r * .42); ctx.lineTo(r * .66, r * .38); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#d6336c'; ctx.beginPath(); ctx.arc(0, 0, r * .18, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else if (a === 'flower') {
+    const fx = -r * .3, fy = -r * .8;
+    ctx.fillStyle = '#fff';
+    for (let k = 0; k < 5; k++) { const ang = k * Math.PI * 2 / 5; ctx.beginPath(); ctx.arc(fx + Math.cos(ang) * r * .22, fy + Math.sin(ang) * r * .22, r * .16, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#ffd24d'; ctx.beginPath(); ctx.arc(fx, fy, r * .14, 0, Math.PI * 2); ctx.fill();
+  } else if (a === 'sparkles') {
+    for (let k = 0; k < 3; k++) {
+      const ang = now / 700 + k * Math.PI * 2 / 3, dist = r * 1.35;
+      ctx.globalAlpha = .6 + .4 * Math.sin(now / 160 + k * 2); ctx.fillStyle = k % 2 ? '#fff' : '#ffe066';
+      sparklePath(Math.cos(ang) * dist, Math.sin(ang) * dist, r * .22); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawHead(pts, sk, scale, o) {
+  const now = o.now, h = pts[0]; let d = o.dir;
   if (pts[1]) {
     const dx = h.x - pts[1].x, dy = h.y - pts[1].y;
     if ((dx || dy) && Math.hypot(dx, dy) < S * 1.6) d = Math.abs(dx) > Math.abs(dy) ? {x: Math.sign(dx), y: 0} : {x: 0, y: Math.sign(dy)};
   }
-  ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(Math.atan2(d.y, d.x));
-  const r = S * .46, grow = 1 + eatPulse * .12; ctx.scale(grow, grow);
-  if (active('shield')) {
+  const angle = Math.atan2(d.y, d.x);
+  ctx.save(); ctx.translate(h.x, h.y); ctx.rotate(angle);
+  const r = S * .46 * scale, grow = 1 + (o.eatPulse || 0) * .12; ctx.scale(grow, grow);
+  if (o.shield) {
     ctx.fillStyle = 'rgba(120,205,225,.28)'; ctx.strokeStyle = 'rgba(80,170,200,.85)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, r + 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   }
   ctx.fillStyle = sk.head; ctx.strokeStyle = 'rgba(45,75,30,.45)'; ctx.lineWidth = 2.5;
   ctx.beginPath(); ctx.ellipse(0, 0, r * 1.06, r, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.fillStyle = 'rgba(255,110,150,.45)';
-  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-S * .02, side * S * .3, S * .07, 0, Math.PI * 2); ctx.fill(); }
-  const hurting = state === 'hurt', blink = !hurting && now % 3400 < 130;
+  for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-r * .04, side * r * .65, r * .15, 0, Math.PI * 2); ctx.fill(); }
+  // Gözler: bakış yönü, kırpma, mutlu kapalı gözler, çarpınca X.
+  let look = {x: r * .11, y: 0};
+  if (o.lookAt) {
+    const lx = Math.cos(-angle) * (o.lookAt.x - h.x) - Math.sin(-angle) * (o.lookAt.y - h.y);
+    const ly = Math.sin(-angle) * (o.lookAt.x - h.x) + Math.cos(-angle) * (o.lookAt.y - h.y);
+    const m = Math.hypot(lx, ly) || 1; look = {x: lx / m * r * .12, y: ly / m * r * .12};
+  }
+  const blink = !o.hurt && !o.happy && (now + (o.phase || 0)) % 3400 < 130;
+  ctx.lineCap = 'round';
   for (const side of [-1, 1]) {
-    const ex = S * .1, ey = side * S * .2;
-    if (hurting) {
-      ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.beginPath();
+    const ex = r * .22, ey = side * r * .43;
+    if (o.hurt) {
+      ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 3; ctx.beginPath();
       ctx.moveTo(ex - 5, ey - 5); ctx.lineTo(ex + 5, ey + 5); ctx.moveTo(ex + 5, ey - 5); ctx.lineTo(ex - 5, ey + 5); ctx.stroke();
       continue;
     }
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(ex, ey, S * .16, blink ? S * .025 : S * .16, 0, 0, Math.PI * 2); ctx.fill();
+    if (o.happy) { ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ex, ey, r * .28, -Math.PI / 3, Math.PI / 3); ctx.stroke(); continue; }
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(ex, ey, r * .35, blink ? r * .05 : r * .35, 0, 0, Math.PI * 2); ctx.fill();
     if (!blink) {
-      ctx.fillStyle = '#2d3b22'; ctx.beginPath(); ctx.arc(ex + S * .05, ey, S * .085, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + S * .08, ey - S * .04, S * .03, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#2d3b22'; ctx.beginPath(); ctx.arc(ex + look.x, ey + look.y, r * .185, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + look.x + r * .07, ey + look.y - r * .08, r * .065, 0, Math.PI * 2); ctx.fill();
     }
   }
-  ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-  if (eatPulse > .05) {
-    ctx.fillStyle = '#7a2a3a'; ctx.beginPath(); ctx.ellipse(S * .3, 0, S * .08 + eatPulse * S * .04, S * .07 + eatPulse * S * .05, 0, 0, Math.PI * 2); ctx.fill();
-  } else if (hurting) {
-    ctx.beginPath(); ctx.arc(S * .3, 0, S * .05, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#2d3b22'; ctx.lineWidth = 2.5;
+  if ((o.eatPulse || 0) > .05) {
+    ctx.fillStyle = '#7a2a3a'; ctx.beginPath(); ctx.ellipse(r * .65, 0, r * .17 + o.eatPulse * r * .09, r * .15 + o.eatPulse * r * .11, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (o.hurt) {
+    ctx.beginPath(); ctx.arc(r * .65, 0, r * .11, 0, Math.PI * 2); ctx.stroke();
   } else {
-    ctx.beginPath(); ctx.arc(S * .2, 0, S * .14, -Math.PI / 3, Math.PI / 3); ctx.stroke();
-    if (now % 2600 < 240) {
+    ctx.beginPath(); ctx.arc(r * .43, 0, r * .3, -Math.PI / 3, Math.PI / 3); ctx.stroke();
+    if ((now + (o.phase || 0)) % 2600 < 240) {
       ctx.strokeStyle = '#e5536f'; ctx.lineWidth = 3; ctx.beginPath();
-      ctx.moveTo(S * .4, 0); ctx.lineTo(S * .66, 0); ctx.lineTo(S * .76, -S * .08); ctx.moveTo(S * .66, 0); ctx.lineTo(S * .76, S * .08); ctx.stroke();
+      ctx.moveTo(r * .87, 0); ctx.lineTo(r * 1.43, 0); ctx.lineTo(r * 1.65, -r * .17); ctx.moveTo(r * 1.43, 0); ctx.lineTo(r * 1.65, r * .17); ctx.stroke();
     }
   }
+  drawAccessory(sk, r, now);
   ctx.restore();
+  if (o.happy) drawEmoji('💕', h.x, h.y - S * .9 + Math.sin(now / 200) * 3, 20);
 }
 
 function burst(cell, color, count) {
@@ -685,6 +837,7 @@ function drawParticles() {
   for (const p of particles) {
     ctx.globalAlpha = Math.min(1, p.life / (p.max * .4)); ctx.fillStyle = p.color;
     if (p.shape === 'rect') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot); ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * .66); ctx.restore(); }
+    else if (p.shape === 'heart') { heartPath(p.x, p.y, p.size); ctx.fill(); }
     else { ctx.beginPath(); ctx.arc(p.x, p.y, p.size * Math.min(1, p.life / p.max + .3), 0, Math.PI * 2); ctx.fill(); }
   }
   ctx.globalAlpha = 1;
@@ -716,7 +869,8 @@ function draw(now) {
   drawFoods(now);
   if (bonus) drawBonus(now);
   if (active('slow')) drawSnow(now);
-  drawSnake(now, t);
+  if (friend) drawCreature(friend.body, friend.prev, clamp(friend.acc / friendInterval(), 0, 1), friend.skin, {now, scale: .8, dir: friend.dir, happy: gameTime < friend.happyUntil, lookAt: {x: (snake[0].x + .5) * S, y: (snake[0].y + .5) * S}, phase: 1300});
+  drawCreature(snake, prevSnake, t, skin(), {now, dir: direction, hurt: state === 'hurt', eatPulse, shield: active('shield'), star: active('star')});
   drawParticles(); drawPops(now);
   if (hurtAge < 700) { ctx.fillStyle = `rgba(255,120,150,${(1 - hurtAge / 700) * .35})`; ctx.fillRect(-10, -10, SIZE + 20, SIZE + 20); }
   ctx.restore();
@@ -735,6 +889,7 @@ function frame(now) {
   if (state === 'playing') {
     gameTime += dt; acc += dt; interval = currentInterval();
     for (let guard = 0; acc >= interval && state === 'playing' && guard < 4; guard++) { acc -= interval; tick(); }
+    if (state === 'playing') updateFriend(dt);
   } else if (state === 'countdown') stepCountdown(now);
   else if (state === 'hurt') stepHurt(now);
   eatPulse = Math.max(0, eatPulse - dt / 260);
