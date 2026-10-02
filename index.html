@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#f8f5eb">
+  <meta name="description" content="Lara'nın neşeli yılan bahçesi. Meyveleri topla, sürpriz bonusları yakala ve görevleri tamamla!">
+  <title>Lara'nın Oyunu · Yılan Bahçesi</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css?v=2"><script src="game.js?v=2" defer></script>
+</head>
+<body><div class="page">
+  <header><a class="brand" href="./"><span class="brand-icon">✿</span> LARA'NIN OYUNU</a><span class="header-note">Küçük bir bahçe, kocaman bir macera.</span><button id="sound" class="icon-button" aria-label="Sesi aç" aria-pressed="false">♪</button></header>
+  <main>
+    <section class="intro"><div class="eyebrow">LARA İÇİN SEVGİYLE HAZIRLANDI</div><h1>Yılan <em>Bahçesi</em><span>✿</span></h1><p>Rengârenk meyveler, sürpriz güçler, minik görevler.<br>Bahçede her tur yeni bir macera!</p></section>
+    <section class="game-layout" aria-label="Yılan oyunu">
+      <div class="board-column">
+        <div class="board-card">
+          <div class="board-bar"><span><i></i><span id="garden-status">Meyve şöleni!</span></span><button id="pause" disabled>Ⅱ Duraklat</button></div>
+          <div class="canvas-wrap">
+            <canvas id="board" width="600" height="600" aria-label="Yılan oyun alanı. Meyveleri ve bonusları yön tuşları, WASD veya dokunmatik düğmelerle topla." role="img"></canvas>
+            <div id="overlay" class="overlay">
+              <div class="welcome-art" id="welcome-art">🍎 🍓 🍇</div>
+              <div class="eyebrow" id="overlay-label">BAHÇENE HOŞ GELDİN</div><h2 id="overlay-title">Hazır mısın, Lara?</h2>
+              <p id="overlay-text">Meyveleri topla, sürpriz güçleri yakala!<br>6 saniye içinde yeni meyve topla, seri çarpanını artır.</p>
+              <button id="start" class="primary">Haydi oynayalım <span>→</span></button><small id="overlay-hint">Yön tuşlarıyla veya ekrana dokunarak oyna</small>
+            </div>
+          </div>
+          <div class="board-footer"><span>🍎 +10 &nbsp; 🍓 +20 &nbsp; 🍇 +30</span><span id="mode-hint">Kenardan geç, diğer taraftan çık!</span></div>
+        </div>
+        <div class="garden-guide">
+          <div class="guide-heading"><h3>Bahçenin sürprizleri</h3><span>Her 4 meyvede bir bonus!</span></div>
+          <div class="bonus-guide"><div><span>⭐</span><b>Yıldız</b><small>8 sn iki kat puan</small></div><div><span>❄️</span><b>Serinlik</b><small>8 sn yavaşla</small></div><div><span>🛡️</span><b>Kalkan</b><small>15 sn içinde bir kurtarış</small></div></div>
+          <p>Bonuslar 12 saniye sonra kaybolur. Kalkan çarpışınca seni güvenli yöne çevirir; yol kalmazsa tur biter.</p>
+        </div>
+      </div>
+      <aside>
+        <div class="score-card"><span class="eyebrow">BU TURUN PUANI</span><strong id="score">0</strong><div class="record">♛ En iyi skor <b id="best">0</b></div><div class="harvest"><span>🧺 <b id="collected">0</b> meyve</span><span id="combo">Peş peşe topla, puanı katla!</span></div><p id="cheer" aria-live="polite">Güzel bir macera seni bekliyor.</p></div>
+        <div class="mission-card"><div class="mission-heading"><span>🌼</span><h3>Minik bahçe görevi</h3><b>+50 puan</b></div><div class="mission-detail"><span id="mission-title">Bu tur 5 meyve topla</span><b id="mission-count">0 / 5</b></div><progress id="mission-progress" max="5" value="0" aria-label="5 meyve görevi: 0 / 5"></progress><div class="effects" aria-label="Aktif bonuslar"><span id="effect-empty">Sürpriz güçleri bahçede yakala.</span><span id="effect-star" class="effect star" hidden></span><span id="effect-slow" class="effect slow" hidden></span><span id="effect-shield" class="effect shield" hidden></span></div></div>
+        <div class="settings-card"><h3>Senin bahçen, senin hızın</h3><div class="speed" role="group" aria-label="Oyun hızı"><button data-speed="220" class="selected" aria-pressed="true">🐢<span>Sakin</span></button><button data-speed="145" aria-pressed="false">🐇<span>Neşeli</span></button><button data-speed="90" aria-pressed="false">⚡<span>Hızlı</span></button></div><label class="wall-setting"><span>Duvarlı macera<small>Kenarlara çarpmamaya çalış</small></span><input id="walls" type="checkbox" role="switch"></label></div>
+        <div class="controls-card"><h3>Bir dokunuşla yön ver</h3><div class="dpad" aria-label="Yön kontrolleri"><button data-dir="up" aria-label="Yukarı">↑</button><button data-dir="left" aria-label="Sol">←</button><span>✿</span><button data-dir="right" aria-label="Sağ">→</button><button data-dir="down" aria-label="Aşağı">↓</button></div><p>Klavyede <b>↑ ↓ ← →</b> veya <b>W A S D</b><br>Duraklamak için <b>boşluk</b> tuşu<br>Telefonda bahçede kaydırabilirsin.</p></div>
+      </aside>
+    </section>
+    <footer>Bir meyve daha, bir gülümseme daha. <span>♡</span> <a href="https://oyunlar.perinet.org">Diğer oyunlar ↗</a></footer>
+  </main>
+</div></body></html>
