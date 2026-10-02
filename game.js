@@ -17,10 +17,30 @@ const bonuses = [
 ];
 let snake, foods = [], bonus = null, direction, queue = [];
 let score = 0, best = 0, state = 'ready', speed = 220, timer = null, interval = speed;
-let walls = false, sound = false, audio = null, gameTime = 0, lastTick = 0;
+let walls = false, sound = true, audio = null, masterGain = null, audioFailed = false, soundRevision = 0, gameTime = 0, lastTick = 0;
 let collected = 0, combo = 0, comboUntil = 0, missionTarget = 5, effects = {}, bursts = [];
 try { best = Number(localStorage.getItem('lara-snake-best')) || 0; } catch {}
+try { sound = localStorage.getItem('lara-snake-sound') !== 'off'; } catch {}
 bestEl.textContent = best;
+
+// Notes are [frequency, duration, delay, optional ending frequency].
+const soundEffects = {
+  start: {notes: [[523, .12, 0], [659, .12, .12], [784, .22, .24]]},
+  apple: {notes: [[620, .08, 0, 880], [880, .12, .08]]},
+  strawberry: {notes: [[740, .09, 0], [988, .15, .09]]},
+  grape: {notes: [[659, .08, 0], [831, .08, .08], [988, .15, .16]]},
+  spawn: {notes: [[1047, .08, 0], [1319, .14, .12]], volume: .11},
+  star: {notes: [[784, .09, 0], [988, .09, .09], [1175, .09, .18], [1568, .2, .27]]},
+  slow: {notes: [[880, .14, 0, 440], [440, .25, .14, 220]], wave: 'sine'},
+  shield: {notes: [[440, .18, 0], [660, .18, 0], [880, .2, .18]]},
+  rescue: {notes: [[180, .12, 0, 520], [784, .2, .12]]},
+  mission: {notes: [[523, .1, 0], [659, .1, .1], [784, .1, .2], [1047, .24, .3]]},
+  win: {notes: [[523, .12, 0], [659, .12, .12], [784, .12, .24], [1047, .3, .36], [784, .3, .36]]},
+  over: {notes: [[240, .18, 0, 130], [130, .26, .18, 65]], wave: 'sawtooth', volume: .09},
+  pause: {notes: [[659, .1, 0], [523, .14, .1]], volume: .11},
+  resume: {notes: [[523, .1, 0], [659, .14, .1]], volume: .11},
+  turn: {notes: [[330, .035, 0, 440]], volume: .035}
+};
 
 const same = (a, b) => a && b && a.x === b.x && a.y === b.y;
 const active = kind => (effects[kind] || 0) > gameTime;
@@ -47,6 +67,7 @@ function spawnBonus() {
   const type = bonuses[Math.floor(Math.random() * bonuses.length)];
   bonus = {...cell, type, expires: gameTime + 12000};
   announce(`${type.icon} ${type.name} çıktı! 12 saniye içinde yakala.`);
+  playSound('spawn');
 }
 
 function reset() {
@@ -112,14 +133,51 @@ function draw() {
   }
 }
 
-function tone(freq) {
+function updateSoundButton() {
+  const button = $('#sound');
+  const label = audioFailed && sound ? 'Ses için tekrar dene' : sound ? 'Sesi kapat' : 'Sesi aç';
+  button.textContent = audioFailed && sound ? '🔈 Tekrar dene' : sound ? '🔊 Ses açık' : '🔇 Ses kapalı';
+  button.setAttribute('aria-pressed', String(sound));
+  button.setAttribute('aria-label', label);
+  button.setAttribute('title', label);
+}
+
+async function playSound(name, pitch = 1) {
   if (!sound) return;
+  const revision = soundRevision;
   try {
-    audio ??= new (window.AudioContext || window.webkitAudioContext)(); audio.resume();
-    const o = audio.createOscillator(), g = audio.createGain();
-    o.type = 'sine'; o.frequency.value = freq; g.gain.setValueAtTime(.06, audio.currentTime);
-    g.gain.exponentialRampToValueAtTime(.001, audio.currentTime + .15); o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + .16);
-  } catch {}
+    if (!audio || audio.state === 'closed') {
+      // Create/resume directly inside the start, key or touch gesture.
+      audio = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audio.createGain();
+      masterGain.gain.value = .65;
+      masterGain.connect(audio.destination);
+    }
+    if (audio.state !== 'running') await audio.resume();
+    if (!sound || revision !== soundRevision) return;
+    if (audio.state !== 'running') throw new Error('Audio is suspended');
+    audioFailed = false;
+    updateSoundButton();
+    masterGain.gain.setValueAtTime(.65, audio.currentTime);
+    const effect = soundEffects[name], base = audio.currentTime + .01;
+    for (const [freq, duration, delay, endFreq] of effect.notes) {
+      const oscillator = audio.createOscillator(), gain = audio.createGain();
+      const start = base + delay, end = start + duration;
+      oscillator.type = effect.wave || 'triangle';
+      oscillator.frequency.setValueAtTime(freq * pitch, start);
+      if (endFreq) oscillator.frequency.exponentialRampToValueAtTime(endFreq * pitch, end);
+      gain.gain.setValueAtTime(.001, start);
+      gain.gain.linearRampToValueAtTime(effect.volume || .18, start + .008);
+      gain.gain.exponentialRampToValueAtTime(.001, end);
+      oscillator.connect(gain); gain.connect(masterGain);
+      oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
+      oscillator.start(start); oscillator.stop(end + .02);
+    }
+  } catch {
+    if (!sound || revision !== soundRevision) return;
+    audioFailed = true;
+    updateSoundButton();
+  }
 }
 
 function announce(message) { $('#cheer').textContent = message; }
@@ -159,7 +217,7 @@ function begin() {
   startBtn.blur(); reset(); state = 'playing'; overlay.hidden = true;
   pauseBtn.disabled = false; pauseBtn.textContent = 'Ⅱ Duraklat';
   announce('Üç farklı meyve seni bekliyor! Bakalım ilk bonusun ne olacak?');
-  lastTick = performance.now(); schedule(); tone(520);
+  lastTick = performance.now(); schedule(); playSound('start');
 }
 
 function candidate(d) {
@@ -183,7 +241,7 @@ function tick() {
     const escape = Object.values(dirs).find(d => candidate(d));
     if (!escape) return finish(false);
     direction = escape; next = candidate(direction); queue = []; effects.shield = 0;
-    announce('🛡️ Kalkan seni kurtardı ve güvenli yöne çevirdi!'); tone(420);
+    announce('🛡️ Kalkan seni kurtardı ve güvenli yöne çevirdi!'); playSound('rescue');
   }
   const fruitIndex = foods.findIndex(p => same(p, next));
   snake.unshift(next);
@@ -194,10 +252,10 @@ function tick() {
     addScore(points);
     bursts.push({...next, text: `+${points}`, color: item.type.color, born: gameTime});
     announce(`${item.type.icon} ${item.type.name} +${points} puan!${combo > 1 ? ` Seri ×${combo}!` : ''}`);
-    tone(600 + combo * 100);
+    playSound(['apple', 'strawberry', 'grape'][fruits.indexOf(item.type)], 1 + (combo - 1) * .12);
     if (collected >= missionTarget) {
       addScore(50); missionTarget += 5;
-      announce('🌼 Görev tamam! +50 puan. Yeni hedefin hazır!'); tone(980);
+      announce('🌼 Görev tamam! +50 puan. Yeni hedefin hazır!'); playSound('mission');
     }
     if (snake.length === N * N) { draw(); updateHud(); return finish(true); }
     if (collected % 4 === 0) spawnBonus();
@@ -205,7 +263,7 @@ function tick() {
   if (same(bonus, next)) {
     const type = bonus.type; effects[type.kind] = gameTime + type.duration; bonus = null;
     bursts.push({...next, text: type.icon, color: type.color, born: gameTime});
-    announce(`${type.icon} ${type.detail}`); tone(880);
+    announce(`${type.icon} ${type.detail}`); playSound(type.kind);
   }
   // Refill missing types when the tail or a collected bonus frees a crowded cell.
   fruits.forEach(type => { if (!foods.some(item => item.type === type)) spawnFruit(type); });
@@ -221,7 +279,7 @@ function panel(label, title, text, button, art) {
 }
 
 function finish(win) {
-  clearInterval(timer); state = 'over'; pauseBtn.disabled = true; updateHud(); draw(); tone(win ? 880 : 220);
+  clearInterval(timer); state = 'over'; pauseBtn.disabled = true; updateHud(); draw(); playSound(win ? 'win' : 'over');
   panel(win ? 'BAHÇENİN ŞAMPİYONU' : 'GÜZEL BİR MACERAYDI', win ? 'Bahçeyi doldurdun, Lara!' : 'Bir tur daha, Lara?',
     `${collected} meyve, ${score} puan! En iyi skorun ${best}. Yeni turda yeni sürprizler seni bekliyor.`, 'Yeniden oyna →', win ? '🏆' : '🍓');
 }
@@ -230,17 +288,18 @@ function pause() {
   if (state === 'playing') {
     gameTime += performance.now() - lastTick;
     state = 'paused'; clearInterval(timer); pauseBtn.textContent = '▶ Devam et';
+    playSound('pause');
     panel('KÜÇÜK BİR MOLA', 'Bahçe seni bekliyor.', 'Bonusların ve serinliğin de seninle mola veriyor. Hazır olduğunda devam edebilirsin.', 'Devam edelim →', '🌿');
   } else if (state === 'paused') {
     startBtn.blur(); pauseBtn.blur(); state = 'playing'; overlay.hidden = true;
-    pauseBtn.textContent = 'Ⅱ Duraklat'; lastTick = performance.now(); schedule();
+    pauseBtn.textContent = 'Ⅱ Duraklat'; lastTick = performance.now(); schedule(); playSound('resume');
   }
 }
 
 function turn(name) {
   if (state !== 'playing') return;
   const d = dirs[name], last = queue.at(-1) || direction;
-  if (queue.length < 2 && (d.x !== last.x || d.y !== last.y) && !(d.x === -last.x && d.y === -last.y)) queue.push(d);
+  if (queue.length < 2 && (d.x !== last.x || d.y !== last.y) && !(d.x === -last.x && d.y === -last.y)) { queue.push(d); playSound('turn'); }
 }
 
 startBtn.addEventListener('click', () => state === 'paused' ? pause() : begin());
@@ -262,8 +321,13 @@ $('#walls').addEventListener('change', e => {
   walls = e.target.checked;
   $('#mode-hint').textContent = walls ? 'Dikkat, bahçenin duvarları var!' : 'Kenardan geç, diğer taraftan çık!'; draw();
 });
-$('#sound').addEventListener('click', e => {
-  sound = !sound; e.currentTarget.setAttribute('aria-pressed', String(sound)); e.currentTarget.setAttribute('aria-label', sound ? 'Sesi kapat' : 'Sesi aç'); tone(660);
+$('#sound').addEventListener('click', () => {
+  if (audioFailed && sound) { playSound('start'); return; }
+  sound = !sound; soundRevision++;
+  try { localStorage.setItem('lara-snake-sound', sound ? 'on' : 'off'); } catch {}
+  if (masterGain) masterGain.gain.setValueAtTime(sound ? .65 : 0, audio.currentTime);
+  updateSoundButton();
+  if (sound) playSound('start');
 });
 let touch = null;
 canvas.addEventListener('pointerdown', e => { touch = {x: e.clientX, y: e.clientY}; canvas.setPointerCapture(e.pointerId); });
@@ -275,4 +339,5 @@ canvas.addEventListener('pointerup', e => {
 });
 canvas.addEventListener('pointercancel', () => touch = null);
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') pause(); });
+updateSoundButton();
 reset();
