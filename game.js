@@ -76,45 +76,45 @@ const stickers = [
 const praise = ['Harikasın Lara!', 'Süpersin!', 'Vay canına!', 'Muhteşem!', 'Bravo!', 'İşte bu!', 'Çok iyisin!'];
 
 /* ---------- Bölümler ---------- */
-// Harita: . çimen, R kaya, W gölet, B çalı (Lara saklanır, Huysuz giremez), 1/2 tünel çiftleri.
+// Harita: . çimen, W gölet, B çalı (Lara saklanır, Huysuz giremez), 1/2 tünel çiftleri. Taş yok: çocuğa gereksiz zor geldi.
 // Başlangıç sırası (8. satır) boş kalmalı; her bölüm yeni bir şey tanıtır.
 const levels = [
   {name: 'Çiçek Bahçesi', icon: '🌼', tip: 'Meyveleri topla, arkadaşlara sarıl!', villain: false, map: Array(N).fill('.'.repeat(N))},
-  {name: 'Kayalık', icon: '🪨', tip: 'Kayalara çarpma, etrafından dolaş!', villain: false, map: [
-    '................', '................', '..R.........R...', '................',
-    '.......RR.......', '................', '...R........R...', '................',
-    '................', '................', '..........R.....', '....R...........',
-    '................', '.R.........R....', '................', '................']},
+  {name: 'Tüneller', icon: '🕳️', tip: 'Bir delikten gir, öbüründen çık!', villain: false, map: [
+    '................', '................', '..1.............', '................',
+    '................', '................', '................', '................',
+    '................', '................', '................', '................',
+    '................', '.............1..', '................', '................']},
   {name: 'Çalılık', icon: '🌳', tip: 'Huysuz Yılan gelirse çalıya saklan!', villain: true, map: [
     '................', '................', '..BBB......BBB..', '..BBB......BBB..',
-    '................', '.......R........', '................', '................',
-    '................', '................', '................', '.....R....R.....',
+    '................', '................', '................', '................',
+    '................', '................', '................', '................',
     '..BBB......BBB..', '..BBB......BBB..', '................', '................']},
   {name: 'Gölet', icon: '💧', tip: 'Gölete girme, kenarından dolaş!', villain: true, map: [
     '................', '................', '.BBB.......BBB..', '.BBB.......BBB..',
     '......WWWW......', '.....WWWWWW.....', '......WWWW......', '................',
-    '................', '................', '................', '..R..........R..',
+    '................', '................', '................', '................',
     '................', '......BBBB......', '......BBBB......', '................']},
-  {name: 'Tüneller', icon: '🕳️', tip: 'Bir delikten gir, öbüründen çık!', villain: false, map: [
-    '................', '................', '..1.............', '................',
-    '.....R....R.....', '................', '................', '................',
-    '................', '................', '................', '.....R....R.....',
-    '................', '.............1..', '................', '................']},
-  {name: 'Taş Labirent', icon: '🧱', tip: 'Dar yollarda dikkatli ol!', villain: true, map: [
-    '................', '................', '..RRRR....RRRR..', '................',
-    '................', '..R..BB..BB..R..', '..R..BB..BB..R..', '..R..........R..',
-    '................', '..R..........R..', '..R..BB..BB..R..', '..R..BB..BB..R..',
-    '................', '..RRRR....RRRR..', '................', '................']},
-  {name: 'Göl Kenarı', icon: '🌊', tip: 'Tünelden geç, çalıda saklan!', villain: true, map: [
+  {name: 'Göl Kenarı', icon: '🌊', tip: 'Gölün kenarından dolaş, tünelden geç!', villain: false, map: [
     '................', '.1..........BBB.', '............BBB.', '..WWW...........',
-    '..WWW.....R.....', '..WWW...........', '................', '................',
-    '................', '................', '..........WWW...', '.....R....WWW...',
+    '..WWW...........', '..WWW...........', '................', '................',
+    '................', '................', '..........WWW...', '..........WWW...',
     '..BBB.....WWW...', '..BBB...........', '............1...', '................']},
+  {name: 'Saklambaç', icon: '🙈', tip: 'Çalılar senin saklanma yerin!', villain: true, map: [
+    '................', '................', '..BBB..BB..BBB..', '..BBB..BB..BBB..',
+    '................', '..BB...BB...BB..', '..BB...BB...BB..', '................',
+    '................', '................', '..BB...BB...BB..', '..BB...BB...BB..',
+    '................', '..BBB..BB..BBB..', '..BBB..BB..BBB..', '................']},
+  {name: 'Tünel Ağı', icon: '🌀', tip: 'Aynı renkteki delikler birbirine bağlı!', villain: true, map: [
+    '................', '................', '..1....BB....2..', '.......BB.......',
+    '................', '..BB........BB..', '..BB........BB..', '................',
+    '................', '................', '..BB........BB..', '..BB........BB..',
+    '................', '.......BB.......', '..2....BB....1..', '................']},
   {name: 'Büyük Bahçe', icon: '👑', tip: 'Her şey burada, sen yaparsın!', villain: true, map: [
-    '................', '.1............2.', '................', '...RR.....BBB...',
-    '..........BBB...', '.....WWW........', '.....WWW....R...', '................',
+    '................', '.1............2.', '................', '..........BBB...',
+    '..........BBB...', '.....WWW........', '.....WWW........', '................',
     '................', '...........WW...', '..BBB......WW...', '..BBB...........',
-    '.......R........', '...........RR...', '.2............1.', '................']}
+    '................', '................', '.2............1.', '................']}
 ];
 const surprise = {name: 'Sürpriz Bahçe', icon: '🎲', tip: 'Bu bahçeyi daha önce hiç görmedin!', villain: true};
 
@@ -134,7 +134,7 @@ function parseMap(rows, id) {
 }
 let terrain = parseMap(levels[0].map, 'L1');
 const tile = c => inside(c) ? terrain.tiles[key(c)] : '#';
-const solid = c => { const t = tile(c); return t === 'R' || t === 'W'; };
+const solid = c => tile(c) === 'W';
 const isBush = c => tile(c) === 'B';
 const holeOf = c => inside(c) ? terrain.partner.get(key(c)) || null : null;
 const isOpen = c => tile(c) === '.';
@@ -145,7 +145,7 @@ const villainGround = isOpen;
 // Haritanın oynanabilir olduğunu sınar: başlangıç boş, çıkmaz sokak yok, her yere ulaşılıyor, tünel ağızları açık.
 function mapProblems(rows) {
   const tiles = rows.join(''), at = c => inside(c) ? tiles[c.y * N + c.x] : '#';
-  const blocked = c => { const t = at(c); return t === '#' || t === 'R' || t === 'W'; };
+  const blocked = c => { const t = at(c); return t === '#' || t === 'W'; };
   const problems = [];
   if (rows.length !== N || rows.some(r => r.length !== N)) return ['boyut'];
   for (let x = 0; x <= 13; x++) if (at({x, y: 8}) !== '.') problems.push('başlangıç ' + x);
@@ -185,10 +185,11 @@ function surpriseMap() {
       }
       return false;
     };
-    if (Math.random() < .6) place(2 + rand(3), 2 + rand(2), 'W');
-    for (let k = 2 + rand(2); k > 0; k--) place(3, 2, 'B');
-    for (let k = 5 + rand(5); k > 0; k--) place(Math.random() < .3 ? 2 : 1, 1, 'R');
-    if (Math.random() < .6) { place(1, 1, '1'); place(1, 1, '1'); }
+    if (Math.random() < .7) place(2 + rand(3), 2 + rand(2), 'W');
+    if (Math.random() < .3) place(2 + rand(2), 2, 'W');
+    for (let k = 3 + rand(3); k > 0; k--) place(2 + rand(2), 2, 'B');
+    if (Math.random() < .7) { place(1, 1, '1'); place(1, 1, '1'); }
+    if (Math.random() < .3) { place(1, 1, '2'); place(1, 1, '2'); }
     const rows = g.map(r => r.join(''));
     if (!mapProblems(rows).length) return rows;
   }
@@ -1139,7 +1140,7 @@ function background() {
   return bgCanvas;
 }
 
-// Gölet ve kayalar ile tünel ağızlarının içi; değişmedikleri için arka planla birlikte bir kez çizilir.
+// Gölet ve tünel ağızlarının içi; değişmedikleri için arka planla birlikte bir kez çizilir.
 function drawGround(g) {
   const cells = ch => terrain.tiles.flatMap((t, i) => t === ch ? [{x: i % N, y: Math.floor(i / N), i}] : []);
   // Komşusu da gölet olan kenarlar düz, dışa bakan köşeler yuvarlak: hücreler tek bir göle kaynaşır.
@@ -1165,15 +1166,6 @@ function drawGround(g) {
     g.fillStyle = night ? '#3f7d4c' : '#5fb04a'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, 8, .5, Math.PI * 2 - .1); g.closePath(); g.fill();
     g.fillStyle = '#ff9fc2'; g.beginPath(); g.arc(x - 2, y - 2, 2.6, 0, Math.PI * 2); g.fill();
   });
-  for (const c of cells('R')) {
-    const cx = c.x * S + S / 2, cy = c.y * S + S / 2 + 2;
-    g.fillStyle = 'rgba(40,60,20,.22)'; g.beginPath(); g.ellipse(cx + 2, cy + 11, 16, 6, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = night ? '#6c727d' : '#9ba3ab'; g.strokeStyle = night ? '#454a53' : '#6f777f'; g.lineWidth = 2.5;
-    g.beginPath(); g.moveTo(cx - 16, cy + 9); g.bezierCurveTo(cx - 19, cy - 6, cx - 9, cy - 16, cx + 2, cy - 15);
-    g.bezierCurveTo(cx + 14, cy - 14, cx + 19, cy - 2, cx + 16, cy + 9); g.closePath(); g.fill(); g.stroke();
-    g.fillStyle = night ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.45)'; g.beginPath(); g.ellipse(cx - 5, cy - 7, 7, 4, -.4, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = night ? '#4d525b' : '#7d858d'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx + 5, cy - 3); g.lineTo(cx + 9, cy + 3); g.lineTo(cx + 7, cy + 8); g.stroke();
-  }
   for (const c of [...cells('1'), ...cells('2')]) {
     const cx = c.x * S + S / 2, cy = c.y * S + S / 2;
     g.fillStyle = night ? '#6b5238' : '#a7835a'; g.beginPath(); g.ellipse(cx, cy, 18, 15, 0, 0, Math.PI * 2); g.fill();
