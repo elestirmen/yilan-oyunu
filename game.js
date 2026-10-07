@@ -4,6 +4,8 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const N = 16, S = 40, SIZE = N * S, MAX_LIVES = 3;
+// Yılan her 2 meyvede bir halka uzar; bir bölüm 3 görev × 5 meyve.
+const GROW_EVERY = 2, MISSIONS = 3, MISSION_SIZE = 5, BITE_REACH = 4;
 const canvas = $('#board'), ctx = canvas.getContext('2d');
 const overlay = $('#overlay'), toastEl = $('#toast'), countdownEl = $('#countdown');
 const scoreEl = $('#score'), heartsEl = $('#hearts'), pauseBtn = $('#pause');
@@ -32,7 +34,8 @@ const bonuses = [
   {kind: 'star', icon: '⭐', name: 'Yıldız', detail: 'Puanlar iki kat!', duration: 8000, color: '#f2b705'},
   {kind: 'slow', icon: '❄️', name: 'Kar tanesi', detail: 'Yılan yavaşladı, rahat rahat topla!', duration: 8000, color: '#5fb8d8'},
   {kind: 'shield', icon: '🛡️', name: 'Kalkan', detail: 'Bir çarpışmada seni korur!', duration: 15000, color: '#4fae9b'},
-  {kind: 'heart', icon: '💖', name: 'Kalp', detail: 'Bir kalbin geri geldi!', duration: 0, color: '#ff6f9c'}
+  {kind: 'heart', icon: '💖', name: 'Kalp', detail: 'Bir kalbin geri geldi!', duration: 0, color: '#ff6f9c'},
+  {kind: 'shrink', icon: '🧪', name: 'Küçülme iksiri', detail: 'Yılan küçüldü, kuyruğu çiçek açtı!', duration: 0, color: '#b36bd8'}
 ];
 const skins = [
   {id: 'green', name: 'Yeşil', badge: '🌼', head: '#5e9a3c', body: ['#7fbf55', '#95cf6b'], spot: '#c8eaa8', pattern: 'spots', accessory: 'flower', unlock: 0},
@@ -51,44 +54,173 @@ const stickers = [
   {id: 'shield', icon: '🛡️', name: 'Kalkan Taşıyıcı', how: 'Bir kalkan yakala'},
   {id: 'rescued', icon: '💫', name: 'Ucuz Kurtuldum', how: 'Kalkan seni kurtarsın'},
   {id: 'heart', icon: '💖', name: 'Kalp Toplayıcı', how: 'Kaybettiğin bir kalbi geri al'},
+  {id: 'shrink', icon: '🧪', name: 'Minik Yılan', how: 'Küçülme iksiri iç'},
   {id: 'combo', icon: '🔥', name: 'Seri Ustası', how: '×3 seri yap'},
   {id: 'hundred', icon: '💯', name: 'Yüzlük', how: 'Bir turda 100 puan topla'},
   {id: 'threehundred', icon: '🏅', name: 'Üç Yüzlük', how: 'Bir turda 300 puan topla'},
-  {id: 'long', icon: '🐍', name: 'Upuzun', how: 'Yılanın 15 kare uzasın'},
-  {id: 'missions', icon: '🌼', name: 'Görev Perisi', how: 'Bir turda 3 görev tamamla'},
+  {id: 'long', icon: '🐍', name: 'Upuzun', how: 'Yılanın 10 kare uzasın'},
+  {id: 'missions', icon: '🌼', name: 'Görev Perisi', how: 'Bir bölümü bitir'},
   {id: 'walls', icon: '🧱', name: 'Cesur Kâşif', how: 'Duvarlı bahçede 10 meyve topla'},
+  {id: 'tunnel', icon: '🕳️', name: 'Tünel Kâşifi', how: 'Bir tünelden geç'},
   {id: 'record', icon: '🏆', name: 'Rekor Kıran', how: 'Kendi rekorunu geç'},
-  {id: 'stars3', icon: '🌟', name: 'Üç Yıldız', how: 'Bir turda 3 yıldız kazan'},
+  {id: 'stars3', icon: '🌟', name: 'Üç Yıldız', how: 'Bir bölümü 3 yıldızla bitir'},
+  {id: 'garden8', icon: '🗺️', name: 'Bahçe Gezgini', how: 'Bütün bahçeleri bitir'},
   {id: 'rainbow', icon: '🌈', name: 'Gökkuşağı', how: 'Gökkuşağı yılanını aç'},
   {id: 'friend', icon: '💕', name: 'Can Dostu', how: 'Sürpriz arkadaşa sarıl'},
   {id: 'gift', icon: '🎁', name: 'Hediye Avcısı', how: 'Arkadaşının bıraktığı hediyeyi aç'},
   {id: 'twins', icon: '💞', name: 'Çifte Sarılma', how: 'Birlikte gelen iki arkadaşa da sarıl'},
   {id: 'escape', icon: '🏃‍♀️', name: 'Kaçış Ustası', how: "Huysuz Yılan'dan ısırılmadan kurtul"},
-  {id: 'ten-games', icon: '🎈', name: 'Bahçe Dostu', how: '10 tur oyna'}
+  {id: 'hide', icon: '🌳', name: 'Saklambaç', how: 'Çalıya saklan, Huysuz Yılan seni kaybetsin'},
+  {id: 'ten-games', icon: '🎈', name: 'Bahçe Dostu', how: '10 bölüm oyna'}
 ];
 const praise = ['Harikasın Lara!', 'Süpersin!', 'Vay canına!', 'Muhteşem!', 'Bravo!', 'İşte bu!', 'Çok iyisin!'];
 
+/* ---------- Bölümler ---------- */
+// Harita: . çimen, R kaya, W gölet, B çalı (Lara saklanır, Huysuz giremez), 1/2 tünel çiftleri.
+// Başlangıç sırası (8. satır) boş kalmalı; her bölüm yeni bir şey tanıtır.
+const levels = [
+  {name: 'Çiçek Bahçesi', icon: '🌼', tip: 'Meyveleri topla, arkadaşlara sarıl!', villain: false, map: Array(N).fill('.'.repeat(N))},
+  {name: 'Kayalık', icon: '🪨', tip: 'Kayalara çarpma, etrafından dolaş!', villain: false, map: [
+    '................', '................', '..R.........R...', '................',
+    '.......RR.......', '................', '...R........R...', '................',
+    '................', '................', '..........R.....', '....R...........',
+    '................', '.R.........R....', '................', '................']},
+  {name: 'Çalılık', icon: '🌳', tip: 'Huysuz Yılan gelirse çalıya saklan!', villain: true, map: [
+    '................', '................', '..BBB......BBB..', '..BBB......BBB..',
+    '................', '.......R........', '................', '................',
+    '................', '................', '................', '.....R....R.....',
+    '..BBB......BBB..', '..BBB......BBB..', '................', '................']},
+  {name: 'Gölet', icon: '💧', tip: 'Gölete girme, kenarından dolaş!', villain: true, map: [
+    '................', '................', '.BBB.......BBB..', '.BBB.......BBB..',
+    '......WWWW......', '.....WWWWWW.....', '......WWWW......', '................',
+    '................', '................', '................', '..R..........R..',
+    '................', '......BBBB......', '......BBBB......', '................']},
+  {name: 'Tüneller', icon: '🕳️', tip: 'Bir delikten gir, öbüründen çık!', villain: false, map: [
+    '................', '................', '..1.............', '................',
+    '.....R....R.....', '................', '................', '................',
+    '................', '................', '................', '.....R....R.....',
+    '................', '.............1..', '................', '................']},
+  {name: 'Taş Labirent', icon: '🧱', tip: 'Dar yollarda dikkatli ol!', villain: true, map: [
+    '................', '................', '..RRRR....RRRR..', '................',
+    '................', '..R..BB..BB..R..', '..R..BB..BB..R..', '..R..........R..',
+    '................', '..R..........R..', '..R..BB..BB..R..', '..R..BB..BB..R..',
+    '................', '..RRRR....RRRR..', '................', '................']},
+  {name: 'Göl Kenarı', icon: '🌊', tip: 'Tünelden geç, çalıda saklan!', villain: true, map: [
+    '................', '.1..........BBB.', '............BBB.', '..WWW...........',
+    '..WWW.....R.....', '..WWW...........', '................', '................',
+    '................', '................', '..........WWW...', '.....R....WWW...',
+    '..BBB.....WWW...', '..BBB...........', '............1...', '................']},
+  {name: 'Büyük Bahçe', icon: '👑', tip: 'Her şey burada, sen yaparsın!', villain: true, map: [
+    '................', '.1............2.', '................', '...RR.....BBB...',
+    '..........BBB...', '.....WWW........', '.....WWW....R...', '................',
+    '................', '...........WW...', '..BBB......WW...', '..BBB...........',
+    '.......R........', '...........RR...', '.2............1.', '................']}
+];
+const surprise = {name: 'Sürpriz Bahçe', icon: '🎲', tip: 'Bu bahçeyi daha önce hiç görmedin!', villain: true};
+
+const key = c => c.y * N + c.x;
+const inside = c => c.x >= 0 && c.x < N && c.y >= 0 && c.y < N;
+const around = c => Object.values(dirs).map(d => ({x: c.x + d.x, y: c.y + d.y}));
+
+// Harita satırlarını hücre türlerine ve tünel eşlerine çevirir.
+function parseMap(rows, id) {
+  const tiles = rows.join('').split(''), partner = new Map(), ends = {};
+  tiles.forEach((ch, i) => {
+    if (ch !== '1' && ch !== '2') return;
+    const c = {x: i % N, y: Math.floor(i / N)};
+    if (ends[ch]) { partner.set(i, ends[ch]); partner.set(key(ends[ch]), c); } else ends[ch] = c;
+  });
+  return {id, tiles, partner, rows};
+}
+let terrain = parseMap(levels[0].map, 'L1');
+const tile = c => inside(c) ? terrain.tiles[key(c)] : '#';
+const solid = c => { const t = tile(c); return t === 'R' || t === 'W'; };
+const isBush = c => tile(c) === 'B';
+const holeOf = c => inside(c) ? terrain.partner.get(key(c)) || null : null;
+const isOpen = c => tile(c) === '.';
+// Arkadaşlar çalıya girebilir, Huysuz Yılan yalnız açık çimende yürür; tünelleri yalnız Lara kullanır.
+const friendGround = c => { const t = tile(c); return t === '.' || t === 'B'; };
+const villainGround = isOpen;
+
+// Haritanın oynanabilir olduğunu sınar: başlangıç boş, çıkmaz sokak yok, her yere ulaşılıyor, tünel ağızları açık.
+function mapProblems(rows) {
+  const tiles = rows.join(''), at = c => inside(c) ? tiles[c.y * N + c.x] : '#';
+  const blocked = c => { const t = at(c); return t === '#' || t === 'R' || t === 'W'; };
+  const problems = [];
+  if (rows.length !== N || rows.some(r => r.length !== N)) return ['boyut'];
+  for (let x = 0; x <= 13; x++) if (at({x, y: 8}) !== '.') problems.push('başlangıç ' + x);
+  const cells = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const c = {x, y};
+    if (blocked(c)) continue;
+    cells.push(c);
+    if (around(c).filter(blocked).length > 2) problems.push(`çıkmaz ${x},${y}`);
+    if (at(c) === '1' || at(c) === '2') if (around(c).some(n => at(n) !== '.')) problems.push(`tünel ağzı ${x},${y}`);
+  }
+  const seen = new Set([key(cells[0])]), todo = [cells[0]];
+  while (todo.length) for (const n of around(todo.pop())) if (!blocked(n) && !seen.has(key(n))) { seen.add(key(n)); todo.push(n); }
+  if (seen.size !== cells.length) problems.push('kopuk alan');
+  for (const ch of ['1', '2']) {
+    const ends = cells.filter(c => at(c) === ch);
+    if (ends.length && ends.length !== 2) problems.push('tünel sayısı ' + ch);
+    else if (ends.length && Math.abs(ends[0].x - ends[1].x) + Math.abs(ends[0].y - ends[1].y) < 6) problems.push('tünel kısa ' + ch);
+  }
+  return problems;
+}
+
+// 8. bölümden sonra her seferinde yeni, rastgele ama sınanmış bir bahçe.
+function surpriseMap() {
+  for (let attempt = 0; attempt < 400; attempt++) {
+    const g = Array.from({length: N}, () => Array(N).fill('.'));
+    const taken = [];
+    // Engeller birbirine ve kenara değmez: kapalı cep oluşmaz.
+    const place = (w, h, ch) => {
+      for (let t = 0; t < 40; t++) {
+        const x = 1 + rand(N - w - 1), y = 1 + rand(N - h - 1);
+        if (y <= 9 && y + h - 1 >= 7) continue;
+        if (taken.some(r => x <= r.x + r.w && r.x <= x + w && y <= r.y + r.h && r.y <= y + h)) continue;
+        taken.push({x, y, w, h});
+        for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) g[y + j][x + i] = ch;
+        return true;
+      }
+      return false;
+    };
+    if (Math.random() < .6) place(2 + rand(3), 2 + rand(2), 'W');
+    for (let k = 2 + rand(2); k > 0; k--) place(3, 2, 'B');
+    for (let k = 5 + rand(5); k > 0; k--) place(Math.random() < .3 ? 2 : 1, 1, 'R');
+    if (Math.random() < .6) { place(1, 1, '1'); place(1, 1, '1'); }
+    const rows = g.map(r => r.join(''));
+    if (!mapProblems(rows).length) return rows;
+  }
+  return levels[levels.length - 1].map;
+}
+const levelInfo = n => n <= levels.length ? levels[n - 1] : surprise;
+
 /* ---------- Kayıt ---------- */
 const profile = Object.assign(
-  {best: 0, totalFruit: 0, games: 0, stickers: [], skin: 'green', speed: 230, walls: false, night: false},
+  {best: 0, totalFruit: 0, games: 0, stickers: [], skin: 'green', speed: 230, walls: false, night: false, unlocked: 1, levelStars: []},
   store.get('profile', {})
 );
+profile.unlocked = Math.max(1, Math.floor(Number(profile.unlocked)) || 1);
+if (!Array.isArray(profile.levelStars)) profile.levelStars = [];
 profile.best = Math.max(Number(profile.best) || 0, Number(store.get('best', 0)) || 0);
 if (![230, 160, 105].includes(profile.speed)) profile.speed = 230;
 const saveProfile = () => store.set('profile', profile);
 const skin = () => skins.find(s => s.id === profile.skin && s.unlock <= profile.totalFruit) || skins[0];
 
 /* ---------- Durum ---------- */
-let snake = [], prevSnake = [], direction = dirs.right, queue = [], foods = [], bonus = null;
+let snake = [], prevSnake = [], direction = dirs.right, queue = [], foods = [], bonus = null, growth = 0;
 let state = 'ready', screen = 'start', stickersReturn = 'start';
-let score = 0, collected = 0, combo = 0, comboUntil = 0, missionTarget = 5, missionsDone = 0, lives = MAX_LIVES, effects = {}, gameTime = 0;
-let speed = profile.speed, walls = !!profile.walls, night = !!profile.night, interval = speed, acc = 0, lastFrame = 0;
-let countdownStart = 0, countdownStep = null, hurtStart = 0, hurtDone = false, eatPulse = 0;
-let particles = [], pops = [], roundStickers = [], roundSkins = [], bestAtStart = 0, toasts = [], toastTimer = 0;
-let friends = [], gifts = [], nextFriendAt = 0, villain = null, nextVillainAt = 0;
+let score = 0, collected = 0, combo = 0, comboUntil = 0, missionTarget = MISSION_SIZE, missionsDone = 0, lives = MAX_LIVES, effects = {}, gameTime = 0;
+let level = 1, levelFruit = 0, levelStart = {score: 0, collected: 0}, levelFails = 0, recordShown = false;
+let speed = profile.speed, walls = !!profile.walls, night = !!profile.night, interval = speed, acc = 0, lastFrame = 0, pace = 1;
+let countdownStart = 0, countdownStep = null, hurtStart = 0, hurtDone = false, clearedStart = 0, clearedShown = false, eatPulse = 0;
+let particles = [], pops = [], blooms = [], roundStickers = [], roundSkins = [], bestAtStart = 0, toasts = [], toastTimer = 0;
+let friends = [], gifts = [], nextFriendAt = 0, villain = null, nextVillainAt = 0, villainVisits = 0;
 let sound = store.flag('sound', true), musicOn = store.flag('music', true);
 const active = kind => (effects[kind] || 0) > gameTime;
-const currentInterval = () => active('slow') ? Math.round(speed * 1.65) : speed;
+// pace: iyi gidince görev görev biraz hızlanır, kalp gidince biraz yavaşlar (uyarlanan zorluk).
+const currentInterval = () => Math.round(speed * pace * (active('slow') ? 1.65 : 1));
 const inRound = () => state === 'playing' || state === 'countdown' || state === 'hurt';
 
 /* ---------- Ses ---------- */
@@ -120,7 +252,11 @@ const soundEffects = {
   hug: {notes: [[523, .1, 0], [659, .1, .08], [784, .1, .16], [1047, .32, .24]], volume: .17},
   gift: {notes: [[523, .08, 0], [784, .08, .08], [1047, .08, .16], [1319, .1, .24], [1568, .3, .32]], volume: .16},
   steal: {notes: [[330, .1, 0, 262], [262, .18, .1, 196]], wave: 'sawtooth', volume: .07},
-  villain: {notes: [[196, .18, 0], [185, .18, .18], [165, .42, .36]], wave: 'sawtooth', volume: .08}
+  villain: {notes: [[196, .18, 0], [185, .18, .18], [165, .42, .36]], wave: 'sawtooth', volume: .08},
+  shrink: {notes: [[1319, .08, 0, 988], [988, .08, .08, 659], [784, .1, .16], [1175, .22, .26]], volume: .15},
+  tunnel: {notes: [[260, .16, 0, 780], [780, .16, .14, 1170]], wave: 'sine', volume: .13},
+  hide: {notes: [[523, .1, 0], [392, .1, .12], [523, .1, .24], [659, .2, .36]], wave: 'sine', volume: .14},
+  level: {notes: [[523, .1, 0], [659, .1, .1], [784, .1, .2], [1047, .14, .3], [1319, .14, .44], [1568, .4, .58]], volume: .16}
 };
 let audio = null, sfxGain = null, musicGain = null, soundRevision = 0;
 
@@ -206,7 +342,7 @@ function tone(midi, at, duration, wave, volume) {
 
 const music = {
   timer: null, playing: false, melAt: 0, bassAt: 0, melIdx: 0, bassIdx: 0, mode: 'happy',
-  tempo() { return (100 + (230 - speed) * .3) * tunes[this.mode].tempoScale; },
+  tempo() { return (100 + (230 - speed * pace) * .3) * tunes[this.mode].tempoScale; },
   setMode(mode) {
     if (this.mode === mode) return;
     this.mode = mode;
@@ -274,44 +410,75 @@ function hideCountdown() { countdownEl.hidden = true; }
 function pulse(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
 
 /* ---------- Oyun kuralları ---------- */
+const occupied = c => snake.some(p => same(p, c)) || foods.some(p => same(p, c)) || same(bonus, c) || gifts.some(g => same(g, c))
+  || friends.some(f => f.body.some(p => same(p, c))) || !!(villain && villain.body.some(p => same(p, c)));
 function freeCell() {
   const free = [];
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const cell = {x, y};
-    if (!snake.some(p => same(p, cell)) && !foods.some(p => same(p, cell)) && !same(bonus, cell) && !gifts.some(g => same(g, cell))) free.push(cell);
+    if (isOpen(cell) && !occupied(cell)) free.push(cell);
   }
   return free.length ? pick(free) : null;
 }
 function spawnFruit(type) { const cell = freeCell(); if (cell) foods.push({...cell, type}); }
 function refill() { fruits.forEach(type => { if (!foods.some(item => item.type === type)) spawnFruit(type); }); }
 
+const bonusOf = kind => bonuses.find(b => b.kind === kind);
+// Küçülme iksiri yalnız yılan uzunken çıkar; uzadıkça daha sık.
+const shrinkChance = () => snake.length >= 9 ? .55 : snake.length >= 6 ? .3 : 0;
+function chooseBonus() {
+  if (lives < MAX_LIVES && Math.random() < .45) return bonusOf('heart');
+  if (Math.random() < shrinkChance()) return bonusOf('shrink');
+  return pick(bonuses.filter(b => b.duration));
+}
 function spawnBonus() {
   bonus = null;
   const cell = freeCell();
   if (!cell) return;
-  let type = pick(bonuses.filter(b => b.kind !== 'heart'));
-  if (lives < MAX_LIVES && Math.random() < .45) type = bonuses.find(b => b.kind === 'heart');
+  const type = chooseBonus();
   bonus = {...cell, type, expires: gameTime + 12000};
   toast(`${type.icon} ${type.name} çıktı, çabuk yakala!`, 1500);
   playSound('spawn');
 }
 
-function reset() {
-  snake = [{x: 7, y: 8}, {x: 6, y: 8}, {x: 5, y: 8}, {x: 4, y: 8}];
-  prevSnake = snake.map(p => ({...p})); direction = dirs.right; queue = [];
-  foods = []; bonus = null; effects = {}; particles = []; pops = [];
-  score = 0; collected = 0; combo = 0; comboUntil = 0; gameTime = 0; missionTarget = 5; missionsDone = 0;
-  lives = MAX_LIVES; acc = 0; eatPulse = 0; roundStickers = []; roundSkins = []; bestAtStart = profile.best;
-  friends = []; gifts = []; scheduleFriend(); villain = null; scheduleVillain(true); $('#villain-chip').hidden = true;
+const startSnake = () => [{x: 7, y: 8}, {x: 6, y: 8}, {x: 5, y: 8}, {x: 4, y: 8}];
+// Bölümü baştan kurar. Aynı bölümü yeniden denerken (again) harita korunur; sürpriz bahçe de değişmez.
+function setupLevel(n, again) {
+  if (!again || terrain.level !== n) {
+    terrain = parseMap(n <= levels.length ? levels[n - 1].map : surpriseMap(), `L${n}-${Date.now()}`);
+    terrain.level = n;
+  }
+  level = n;
+  snake = startSnake(); prevSnake = snake.map(p => ({...p})); direction = dirs.right; queue = []; growth = 0;
+  foods = []; bonus = null; effects = {}; particles = []; pops = []; blooms = [];
+  combo = 0; comboUntil = 0; gameTime = 0; levelFruit = 0; missionTarget = MISSION_SIZE; missionsDone = 0;
+  lives = MAX_LIVES; acc = 0; eatPulse = 0; roundStickers = []; roundSkins = [];
+  pace = again ? Math.min(1.2, 1 + .07 * levelFails) : 1;
+  levelStart = {score, collected};
+  friends = []; gifts = []; villain = null; villainVisits = 0; $('#villain-chip').hidden = true;
+  // Huysuz'lu bölümde önce o gelir (ilk görev bitince), arkadaşlar o gittikten sonra; ötekilerde arkadaş erken gelir.
+  if (levelInfo(n).villain) { nextVillainAt = 25000 + rand(5000); nextFriendAt = Infinity; }
+  else { nextVillainAt = Infinity; nextFriendAt = 6000 + rand(4000); }
   fruits.forEach(type => spawnFruit(type));
   updateHud();
 }
 
+// Tünel ağzındaki baş, bir sonraki adımda eş deliğin üstünden çıkar.
+function tunnelExit() {
+  const exit = holeOf(snake[0]);
+  return exit && !(snake[1] && same(snake[1], exit)) ? exit : null;
+}
 function candidate(d) {
-  const next = {x: snake[0].x + d.x, y: snake[0].y + d.y};
-  if (walls && (next.x < 0 || next.x >= N || next.y < 0 || next.y >= N)) return null;
-  next.x = (next.x + N) % N; next.y = (next.y + N) % N;
-  const grows = foods.some(p => same(p, next));
+  const exit = tunnelExit();
+  let next;
+  if (exit) next = {x: exit.x, y: exit.y};
+  else {
+    next = {x: snake[0].x + d.x, y: snake[0].y + d.y};
+    if (walls && !inside(next)) return null;
+    next.x = (next.x + N) % N; next.y = (next.y + N) % N;
+  }
+  if (solid(next)) return null;
+  const grows = foods.some(p => same(p, next)) && growth + 1 >= GROW_EVERY;
   return (grows ? snake : snake.slice(0, -1)).some(p => same(p, next)) ? null : next;
 }
 
@@ -321,6 +488,7 @@ function tick() {
   gifts = gifts.filter(g => g.expires > gameTime);
   if (comboUntil <= gameTime) combo = 0;
   if (queue.length) direction = queue.shift();
+  const through = tunnelExit();
   let next = candidate(direction);
   if (!next && active('shield')) {
     const escape = Object.values(dirs).find(d => candidate(d));
@@ -332,20 +500,29 @@ function tick() {
   if (!next) return hurt();
   const fruitIndex = foods.findIndex(p => same(p, next));
   snake.unshift(next);
+  // Meyve her seferinde değil, GROW_EVERY meyvede bir uzatır.
   let vacated = null;
-  if (fruitIndex >= 0) eat(foods.splice(fruitIndex, 1)[0], next); else vacated = snake.pop();
+  if (fruitIndex >= 0 && ++growth >= GROW_EVERY) growth = 0; else vacated = snake.pop();
+  if (through) passTunnel(through);
+  if (fruitIndex >= 0) eat(foods.splice(fruitIndex, 1)[0], next);
   if (state !== 'playing') return;
   followFriends(vacated);
   if (same(bonus, next)) takeBonus(next);
   const giftIndex = gifts.findIndex(g => same(g, next));
   if (giftIndex >= 0) openGift(gifts.splice(giftIndex, 1)[0]);
-  checkHug(); checkBite();
+  checkHug(); watchVillain(); checkBite();
   refill();
   updateHud();
 }
 
+function passTunnel(exit) {
+  const entry = holeOf(exit), color = tunnelColor(exit);
+  burst(entry, color, 10); burst(exit, color, 14);
+  playSound('tunnel'); buzz(12); award('tunnel');
+}
+
 function eat(item, cell) {
-  combo = Math.min(combo + 1, 3); comboUntil = gameTime + 6000; collected++; profile.totalFruit++;
+  combo = Math.min(combo + 1, 3); comboUntil = gameTime + 6000; collected++; levelFruit++; profile.totalFruit++;
   const points = item.type.points * combo * (active('star') ? 2 : 1);
   addScore(points);
   pops.push({x: cell.x, y: cell.y, text: `+${points}`, color: item.type.color, born: performance.now()});
@@ -356,34 +533,52 @@ function eat(item, cell) {
   if (collected >= 10) award('ten');
   if (collected >= 25) award('twentyfive');
   if (combo === 3) award('combo');
-  if (snake.length >= 15) award('long');
+  if (snake.length >= 10) award('long');
   if (walls && collected >= 10) award('walls');
   if (score >= 100) award('hundred');
   if (score >= 300) award('threehundred');
-  if (collected >= missionTarget) {
-    missionsDone++; missionTarget += 5; addScore(50); confetti(50);
-    toast(`${pick(praise)} 🌼 +50`, 2000); playSound('mission'); buzz([30, 40, 30]);
-    if (missionsDone >= 3) award('missions');
-  }
   const unlocked = skins.find(s => s.unlock > 0 && s.unlock === profile.totalFruit);
   if (unlocked) {
     roundSkins.push(unlocked); confetti(40);
     toast(`Yeni yılan açıldı! 🐍 ${unlocked.name}`, 2400); playSound('unlock');
     if (unlocked.id === 'rainbow') award('rainbow');
   }
+  if (levelFruit >= missionTarget) {
+    missionsDone++; missionTarget += MISSION_SIZE; addScore(50);
+    if (missionsDone >= MISSIONS) { saveProfile(); return clearLevel(); }
+    // İyi gidiyor: bir sonraki görev azıcık daha hızlı.
+    pace = Math.max(.86, pace - .05);
+    if (levelInfo(level).villain && !villainVisits) nextVillainAt = Math.min(nextVillainAt, gameTime + 2000 + rand(1500));
+    confetti(50); toast(`${pick(praise)} 🌼 +50`, 2000); playSound('mission'); buzz([30, 40, 30]);
+  }
   saveProfile();
-  if (snake.length === N * N) return finish(true);
-  if (collected % 4 === 0) spawnBonus();
+  if (levelFruit % 4 === 0) spawnBonus();
 }
 
 function takeBonus(cell) {
   const type = bonus.type; bonus = null;
-  if (type.kind === 'heart') { lives = Math.min(MAX_LIVES, lives + 1); pulse(heartsEl, 'pulse'); }
-  else effects[type.kind] = gameTime + type.duration;
-  award(type.kind);
+  grantBonus(type, cell);
   pops.push({x: cell.x, y: cell.y, text: type.icon, icon: true, color: type.color, born: performance.now()});
   burst(cell, type.color, 16);
   toast(`${type.icon} ${type.detail}`, 1800); playSound(type.kind); buzz([20, 30, 20]);
+}
+function grantBonus(type, cell) {
+  if (type.kind === 'heart') { lives = Math.min(MAX_LIVES, lives + 1); pulse(heartsEl, 'pulse'); }
+  else if (type.kind === 'shrink') shrinkTail(cell);
+  else effects[type.kind] = gameTime + type.duration;
+  award(type.kind);
+}
+
+// Küçülme iksiri: kuyruktan 4 halka (en az 3 kalır) kopar, koptuğu yerlerde çiçek açar.
+function shrinkTail(cell) {
+  const count = Math.min(4, snake.length - 3);
+  if (count <= 0) return;
+  for (const c of snake.splice(-count)) {
+    burst(c, '#ff8fb1', 8);
+    if (isOpen(c) && !blooms.some(b => same(b, c)) && blooms.length < 40) blooms.push({x: c.x, y: c.y, born: performance.now(), color: pick(['#ff8fb1', '#ffd24d', '#c9a7f5', '#ffffff'])});
+  }
+  addScore(10 * count);
+  pops.push({x: cell.x, y: cell.y - 1, text: `+${10 * count} 🌸`, color: '#e35a8c', born: performance.now()});
 }
 
 function addScore(points) {
@@ -402,7 +597,9 @@ function award(id) {
 function hurt() {
   lives--; combo = 0; queue = []; updateHud(); pulse(heartsEl, 'pulse');
   playSound('ouch'); buzz(120);
-  if (lives <= 0) return finish(false);
+  if (lives <= 0) return finish();
+  // Zorlanıyor: oyun biraz yavaşlar.
+  pace = Math.min(1.2, pace + .1);
   state = 'hurt'; hurtStart = performance.now(); hurtDone = false;
   for (const f of friends) if (f.follow) { f.follow = false; f.leaving = true; f.acc = 0; }
   showCountdown(lives === 2 ? 'Ayy!' : 'Dikkat!', true);
@@ -413,19 +610,21 @@ function stepHurt(now) {
   hurtDone = true; respawn(); startCountdown();
 }
 
-// Çarpışmadan sonra yılan yarı boyuyla boş bir yere, sağa bakacak şekilde konur.
+// Çarpışmadan sonra yılan yarı boyuyla, önü açık ve Huysuz Yılan'dan uzak bir yere sağa bakacak şekilde konur.
 function respawn() {
-  const blocked = cell => foods.some(p => same(p, cell)) || same(bonus, cell) || gifts.some(g => same(g, cell));
-  for (let length = Math.max(3, Math.min(12, Math.floor(snake.length / 2))); length >= 1; length--) {
+  const near = (c, body) => body.some(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) <= 2);
+  const free = c => isOpen(c) && !foods.some(p => same(p, c)) && !same(bonus, c) && !gifts.some(g => same(g, c))
+    && !friends.some(f => f.body.some(p => same(p, c))) && !(villain && near(c, villain.body));
+  const place = body => { snake = body; prevSnake = body.map(p => ({...p})); direction = dirs.right; queue = []; };
+  for (let length = Math.max(3, Math.floor(snake.length / 2)); length >= 3; length--) {
     for (let attempt = 0; attempt < 400; attempt++) {
-      const y = rand(N), x = length - 1 + rand(Math.max(1, N - 2 - length));
+      const y = rand(N), x = length - 1 + rand(Math.max(1, N - 3 - length));
       const body = Array.from({length}, (_, k) => ({x: x - k, y}));
-      if (body.every(cell => !blocked(cell))) {
-        snake = body; prevSnake = body.map(p => ({...p})); direction = dirs.right; queue = [];
-        return;
-      }
+      const ahead = [1, 2, 3].map(k => ({x: x + k, y}));
+      if (body.every(free) && ahead.every(c => isOpen(c) || isBush(c))) return place(body);
     }
   }
+  place(startSnake());
 }
 
 function startCountdown() {
@@ -442,10 +641,18 @@ function stepCountdown(now) {
   else { hideCountdown(); state = 'playing'; acc = 0; prevSnake = snake.map(p => ({...p})); updateHud(); }
 }
 
-function begin() {
-  reset(); overlay.hidden = true; pauseBtn.disabled = false;
+function launch() {
+  overlay.hidden = true; pauseBtn.disabled = false;
+  const info = levelInfo(level);
+  toast(`${info.icon} Bölüm ${level}: ${info.name}`, 1900); toast(info.tip, 2600);
   playSound('start'); startCountdown();
 }
+function play(n) {
+  score = 0; collected = 0; bestAtStart = profile.best; recordShown = false; levelFails = 0;
+  setupLevel(n, false); launch();
+}
+function nextLevel() { levelFails = 0; setupLevel(level + 1, false); launch(); }
+function retryLevel() { score = levelStart.score; collected = levelStart.collected; setupLevel(level, true); launch(); }
 function pause() {
   if (state !== 'playing') return;
   state = 'paused'; music.stop(); playSound('pause'); setScreen('pause');
@@ -455,29 +662,62 @@ function resume() {
   overlay.hidden = true; playSound('resume'); startCountdown();
 }
 function home() {
-  state = 'ready'; music.stop(); hideCountdown(); pauseBtn.disabled = true; reset(); setScreen('start');
+  state = 'ready'; music.stop(); hideCountdown(); pauseBtn.disabled = true; score = 0; collected = 0;
+  setupLevel(profile.unlocked, false); setScreen('start');
 }
 
-function finish(win) {
+const recordNow = () => !recordShown && bestAtStart > 0 && score > bestAtStart;
+const earnedHtml = () => [
+  ...roundStickers.map(s => `<span>${s.icon} ${s.name}</span>`),
+  ...roundSkins.map(s => `<span>🐍 Yeni yılan: ${s.name}</span>`)
+].join('');
+
+// Kalpler bitti: bölüm yarım kaldı, aynı bölüm yeniden denenir.
+function finish() {
   state = 'over'; music.stop(); pauseBtn.disabled = true; hideCountdown(); queue = []; $('#villain-chip').hidden = true;
+  profile.games++; levelFails++;
+  if (profile.games >= 10) award('ten-games');
+  const record = recordNow();
+  if (record) { award('record'); recordShown = true; confetti(90); }
+  saveProfile();
+  playSound(record || missionsDone >= 2 ? 'win' : 'over'); buzz(60);
+  $('#over-stars').innerHTML = Array.from({length: MISSIONS}, (_, i) => `<span class="${i < missionsDone ? '' : 'dim'}">🌼</span>`).join('');
+  $('#over-title').textContent = record ? 'Yeni rekor, Lara! 🎉' : missionsDone >= 2 ? 'Az kaldı, Lara!' : missionsDone === 1 ? 'Güzel deneme!' : 'Isınma turuydu! 💪';
+  $('#over-text').textContent = `${levelInfo(level).icon} Bölüm ${level} · 🌼 ${missionsDone}/${MISSIONS} görev · ${score} puan · 🏆 En iyi ${profile.best}`;
+  $('#over-new').innerHTML = earnedHtml();
+  setScreen('over');
+}
+
+// Üç görev bitti: bölüm tamam. Kalan her kalp bir yıldız.
+let clearedStars = 0, clearedRecord = false;
+function clearLevel() {
+  state = 'cleared'; clearedStart = performance.now(); clearedShown = false;
+  music.stop(); pauseBtn.disabled = true; queue = []; $('#villain-chip').hidden = true;
+  clearedStars = lives; clearedRecord = recordNow();
   profile.games++;
   if (profile.games >= 10) award('ten-games');
-  const stars = win ? 3 : collected >= 22 ? 3 : collected >= 12 ? 2 : collected >= 5 ? 1 : 0;
-  if (stars === 3) award('stars3');
-  const record = bestAtStart > 0 && score > bestAtStart;
-  if (record) award('record');
+  award('missions');
+  if (clearedStars === 3) award('stars3');
+  if (level === levels.length) award('garden8');
+  if (clearedRecord) { award('record'); recordShown = true; }
+  if (level <= levels.length) profile.levelStars[level - 1] = Math.max(profile.levelStars[level - 1] || 0, clearedStars);
+  profile.unlocked = Math.max(profile.unlocked, level + 1);
   saveProfile();
-  if (win || record || stars === 3) confetti(90);
-  playSound(win || stars >= 2 ? 'win' : 'over'); buzz(stars >= 2 ? [40, 60, 40, 60, 80] : 60);
-  $('#over-stars').innerHTML = [1, 2, 3].map(i => `<span class="${i <= stars ? '' : 'dim'}">⭐</span>`).join('');
-  $('#over-title').textContent = win ? 'Bahçeyi doldurdun, Lara!' : record ? 'Yeni rekor, Lara! 🎉'
-    : stars === 3 ? 'Muhteşemdin, Lara!' : stars === 2 ? 'Harikaydın, Lara!' : stars === 1 ? 'Güzel bir turdu!' : 'Isınma turuydu! 💪';
-  $('#over-text').textContent = `🧺 ${collected} meyve · ${score} puan · 🏆 En iyi ${profile.best}`;
-  $('#over-new').innerHTML = [
-    ...roundStickers.map(s => `<span>${s.icon} ${s.name}</span>`),
-    ...roundSkins.map(s => `<span>🐍 Yeni yılan: ${s.name}</span>`)
-  ].join('');
-  setScreen('over');
+  confetti(110); playSound('level'); buzz([40, 60, 40, 60, 80]);
+  showCountdown('Bravo!');
+}
+function stepCleared(now) {
+  if (clearedShown || now - clearedStart < 1600) return;
+  clearedShown = true; hideCountdown();
+  const info = levelInfo(level), next = levelInfo(level + 1);
+  $('#level-stars').innerHTML = [1, 2, 3].map(i => `<span class="${i <= clearedStars ? '' : 'dim'}">⭐</span>`).join('');
+  $('#level-title').textContent = level === levels.length ? 'Bütün bahçeleri gezdin! 👑'
+    : clearedRecord ? 'Yeni rekor, Lara! 🎉' : clearedStars === 3 ? 'Muhteşemdin, Lara!' : `Bölüm ${level} bitti!`;
+  $('#level-text').textContent = `${info.icon} ${info.name} · ${score} puan · 🏆 En iyi ${profile.best}`;
+  $('#level-hint').textContent = clearedStars === 3 ? 'Hiç kalp kaybetmedin, üç yıldız!' : 'Kalan her kalbin bir ⭐ oldu.';
+  $('#next-label').textContent = `${next.icon} Bölüm ${level + 1}`;
+  $('#level-new').innerHTML = earnedHtml();
+  setScreen('level');
 }
 
 function turn(name) {
@@ -488,21 +728,63 @@ function turn(name) {
   }
 }
 
+/* ---------- Yol bulma ---------- */
+const onBorder = c => c.x === 0 || c.y === 0 || c.x === N - 1 || c.y === N - 1;
+const stepOf = (c, d) => ({x: c.x + d.x, y: c.y + d.y});
+// Engellerin etrafından dolaşan en kısa yolun ilk adımı; wrap açıksa kenardan karşıya geçilebilir.
+function firstStep(from, isGoal, canEnter, wrap = false) {
+  const seen = new Set([key(from)]), todo = [];
+  const visit = (c, first) => {
+    for (const d of Object.values(dirs)) {
+      let n = stepOf(c, d);
+      if (wrap) n = {x: (n.x + N) % N, y: (n.y + N) % N};
+      if (!inside(n) || seen.has(key(n))) continue;
+      seen.add(key(n));
+      if (isGoal(n)) return first || d;
+      if (canEnter(n)) todo.push({c: n, d: first || d});
+    }
+    return null;
+  };
+  let found = visit(from, null);
+  for (let i = 0; !found && i < todo.length; i++) found = visit(todo[i].c, todo[i].d);
+  return found;
+}
+// Bahçeden çıkış yönü: kenardaysa dışarı, değilse en yakın açık kenara.
+function exitDir(head, cur, canEnter) {
+  const back = d => d.x === -cur.x && d.y === -cur.y;
+  const out = Object.values(dirs).filter(d => !inside(stepOf(head, d)) && !back(d));
+  if (out.length) return out.includes(cur) ? cur : out[0];
+  return firstStep(head, c => onBorder(c) && canEnter(c), canEnter);
+}
+// Bahçeye girilebilecek kenar kapıları: ilk üç hücresi yürünebilir ve Lara'nın başından uzak; her kenardan en çok bir tane.
+function entryGates(ground, count, minGap) {
+  const gates = [];
+  for (const side of shuffle([0, 1, 2, 3])) {
+    const dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
+    for (const lane of shuffle(Array.from({length: N - 4}, (_, i) => i + 2))) {
+      const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+      const path = [1, 2, 3].map(k => ({x: head.x + dir.x * k, y: head.y + dir.y * k}));
+      if (path.every(ground) && gap(path[0], snake[0]) >= minGap) { gates.push({head, dir}); break; }
+    }
+    if (gates.length >= count) break;
+  }
+  return gates;
+}
+const poof = cells => cells.filter(inside).forEach(c => burst(c, '#ffffff', 5));
+
 /* ---------- Sürpriz arkadaşlar ve hediyeler ---------- */
 // Arada bahçeye giren, çarpınca zarar vermeyen yılan dostları: dokununca sarılma, giderken hediye.
 const friendNames = ['Boncuk', 'Fıstık', 'Pamuk', 'Limon', 'Zeytin', 'Badem', 'Şeker', 'Kiraz'];
-const inside = c => c.x >= 0 && c.x < N && c.y >= 0 && c.y < N;
 const friendInterval = () => Math.round(currentInterval() * 1.35);
 const shuffle = list => list.slice().sort(() => Math.random() - .5);
 function scheduleFriend() { nextFriendAt = gameTime + 22000 + rand(16000); }
 
 function spawnFriends() {
-  const count = Math.random() < .25 ? 2 : 1;
-  const sides = shuffle([0, 1, 2, 3]).slice(0, count), names = shuffle(friendNames), looks = shuffle(skins.filter(s => s.id !== skin().id));
+  const gates = entryGates(friendGround, Math.random() < .25 ? 2 : 1, 4), count = gates.length;
+  if (!count) { scheduleFriend(); return; }
+  const names = shuffle(friendNames), looks = shuffle(skins.filter(s => s.id !== skin().id));
   const visit = {size: count, hugs: 0};
-  sides.forEach((side, k) => {
-    const lane = 2 + rand(N - 4), dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
-    const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+  gates.forEach(({head, dir}, k) => {
     const body = Array.from({length: 5}, (_, i) => ({x: head.x - dir.x * i, y: head.y - dir.y * i}));
     friends.push({body, prev: body.map(p => ({...p})), dir, skin: looks[k], name: names[k], acc: -k * 450, until: gameTime + 18000, leaving: false, hugged: false, happyUntil: 0, visit, phase: 900 + k * 700});
   });
@@ -517,13 +799,15 @@ function updateFriends(dt) {
       if (gameTime >= f.until) { f.follow = false; f.leaving = true; f.acc = 0; toast(`👋 ${f.name} el sallayıp gitti!`, 1800); }
       continue;
     }
+    // Yolu kapanıp çıkamayan arkadaş bir süre sonra pırıltıyla kaybolur.
+    if (f.leaving) { f.leftAt ??= gameTime; if (gameTime - f.leftAt > 10000) { poof(f.body); friends.splice(friends.indexOf(f), 1); continue; } }
     f.acc += dt;
     while (friends.includes(f) && f.acc >= friendInterval()) { f.acc -= friendInterval(); stepFriend(f); }
   }
   if (!friends.length) scheduleFriend();
 }
 
-const blockedForFriend = n => !inside(n) || snake.some(p => same(p, n)) || friends.some(o => o.body.some(p => same(p, n))) || foods.some(p => same(p, n)) || same(bonus, n) || gifts.some(g => same(g, n));
+const blockedForFriend = n => !inside(n) || !friendGround(n) || snake.some(p => same(p, n)) || friends.some(o => o.body.some(p => same(p, n))) || foods.some(p => same(p, n)) || same(bonus, n) || gifts.some(g => same(g, n));
 
 function stepFriend(f) {
   const head = f.body[0], reverse = d => d.x === -f.dir.x && d.y === -f.dir.y;
@@ -535,19 +819,19 @@ function stepFriend(f) {
   if (f.leaving) {
     if (f.body.every(c => !inside(c))) { friends.splice(friends.indexOf(f), 1); return; }
     if (inside(head)) {
-      dir = [{d: dirs.left, dist: head.x}, {d: dirs.right, dist: N - 1 - head.x}, {d: dirs.up, dist: head.y}, {d: dirs.down, dist: N - 1 - head.y}]
-        .filter(o => !reverse(o.d)).sort((a, b) => a.dist - b.dist)[0].d;
+      dir = exitDir(head, f.dir, n => !blockedForFriend(n));
+      if (!dir) return;
     }
   } else if (inside(head)) {
-    const ok = d => !blockedForFriend({x: head.x + d.x, y: head.y + d.y});
+    const ok = d => !blockedForFriend(stepOf(head, d));
     if (!(ok(f.dir) && Math.random() < .75)) {
       const good = Object.values(dirs).filter(d => !reverse(d) && (d.x !== f.dir.x || d.y !== f.dir.y) && ok(d));
-      if (good.length) dir = pick(good); else if (!ok(f.dir)) f.leaving = true;
+      if (good.length) dir = pick(good); else if (!ok(f.dir)) { f.leaving = true; return; }
     }
   }
   f.dir = dir;
   f.prev = f.body.map(p => ({...p}));
-  f.body.unshift({x: head.x + dir.x, y: head.y + dir.y}); f.body.pop();
+  f.body.unshift(stepOf(head, dir)); f.body.pop();
   checkHug();
 }
 
@@ -571,16 +855,15 @@ function followFriends(vacated) {
   let target = vacated || snake[snake.length - 1];
   for (const f of friends) {
     if (!f.follow) continue;
-    const head = f.body[0], g0 = gap(head, target);
+    const head = f.body[0];
     let moved = false;
-    if (vacated || g0 > 1) {
-      const options = Object.values(dirs).map(d => ({d, n: wrapCell({x: head.x + d.x, y: head.y + d.y})}))
-        .filter(o => inside(o.n) && !snake.some(p => same(p, o.n)) && !friends.some(k => k.body.some(p => same(p, o.n))) && !(villain && villain.body.some(p => same(p, o.n))))
-        .sort((a, b) => gap(a.n, target) - gap(b.n, target));
-      const best = options[0];
-      if (best && (gap(best.n, target) < g0 || g0 > 1)) {
-        f.dir = best.d; f.prev = f.body.map(p => ({...p}));
-        f.body.unshift(best.n); vacated = f.body.pop(); moved = true;
+    if (vacated || gap(head, target) > 1) {
+      const free = c => friendGround(c) && !snake.some(p => same(p, c)) && !friends.some(k => k.body.some(p => same(p, c))) && !(villain && villain.body.some(p => same(p, c)));
+      const goal = target;
+      const d = firstStep(head, c => same(c, goal) && friendGround(c), free, !walls);
+      if (d) {
+        f.dir = d; f.prev = f.body.map(p => ({...p}));
+        f.body.unshift(wrapCell(stepOf(head, d))); vacated = f.body.pop(); moved = true;
       }
     }
     target = moved ? vacated : f.body[f.body.length - 1];
@@ -596,8 +879,7 @@ function gap(a, b) {
 
 function dropGift(f, cell) {
   if (gifts.length >= 3) return;
-  const spots = [cell, ...Object.values(dirs).map(d => ({x: cell.x + d.x, y: cell.y + d.y}))]
-    .filter(c => inside(c) && !snake.some(p => same(p, c)) && !foods.some(p => same(p, c)) && !same(bonus, c) && !gifts.some(g => same(g, c)));
+  const spots = [cell, ...around(cell)].filter(c => isOpen(c) && !occupied(c));
   const spot = spots[0] || freeCell();
   if (!spot) return;
   gifts.push({x: spot.x, y: spot.y, from: f.name, expires: gameTime + 15000});
@@ -606,9 +888,12 @@ function dropGift(f, cell) {
 
 function openGift(g) {
   let text;
-  if (lives < MAX_LIVES && Math.random() < .5) { lives = Math.min(MAX_LIVES, lives + 1); pulse(heartsEl, 'pulse'); text = '💖 bir kalp'; }
+  if (lives < MAX_LIVES && Math.random() < .5) { grantBonus(bonusOf('heart'), g); text = '💖 bir kalp'; }
   else if (Math.random() < .4) { addScore(50); text = '+50 puan'; }
-  else { const type = pick(bonuses.filter(b => b.kind !== 'heart')); effects[type.kind] = gameTime + type.duration; text = `${type.icon} ${type.name}`; }
+  else {
+    const type = Math.random() < shrinkChance() ? bonusOf('shrink') : pick(bonuses.filter(b => b.duration));
+    grantBonus(type, g); text = `${type.icon} ${type.name}`;
+  }
   pops.push({x: g.x, y: g.y, text: '🎁', icon: true, color: '#e35a8c', born: performance.now()});
   confetti(30);
   toast(`🎁 Hediyeden ${text} çıktı!`, 2200); playSound('gift'); buzz([20, 30, 20]); award('gift');
@@ -622,49 +907,75 @@ function heartBurst(cell) {
 }
 
 /* ---------- Huysuz Yılan ---------- */
-// Kaşları çatık kara yılan: yavaşça kovalar, dokunursa bir kalp alır; kalkan onu korkutur, kaçan ödül kazanır.
+// Kaşları çatık kara yılan: kovalar, Lara'nın başına ya da ilk 3 boğumuna değerse bir kalp alır; kuyruğa dokunması zarar vermez.
+// Lara çalıya girince onu kaybeder; bir süre bulamazsa pes edip gider. Kalkan onu korkutur, kaçan ödül kazanır.
 const villainSkin = {id: 'villain', name: 'Huysuz Yılan', head: '#3d3d50', body: ['#2f2f3a', '#3a3a47'], spot: '#5a5a70', pattern: 'stripes', accessory: 'none'};
 const villainInterval = () => Math.round(currentInterval() * 1.5);
-function scheduleVillain(first) { nextVillainAt = gameTime + (first ? 45000 : 50000) + rand(25000); }
+function scheduleVillain() { nextVillainAt = levelInfo(level).villain ? gameTime + 30000 + rand(15000) : Infinity; }
 
 function spawnVillain() {
-  const side = rand(4), lane = 2 + rand(N - 4), dir = [dirs.right, dirs.left, dirs.down, dirs.up][side];
-  const head = side === 0 ? {x: -1, y: lane} : side === 1 ? {x: N, y: lane} : side === 2 ? {x: lane, y: -1} : {x: lane, y: N};
+  const gate = entryGates(villainGround, 1, 6)[0];
+  if (!gate) { nextVillainAt = gameTime + 3000; return; }
+  villainVisits++;
+  const {head, dir} = gate;
   const body = Array.from({length: 6}, (_, i) => ({x: head.x - dir.x * i, y: head.y - dir.y * i}));
-  villain = {body, prev: body.map(p => ({...p})), dir, acc: 0, until: gameTime + 15000, leaving: false, bit: false, carry: null};
+  villain = {body, prev: body.map(p => ({...p})), dir, acc: 0, until: gameTime + 15000, leaving: false, bit: false, carry: null, lost: false, lostAt: 0, foundAt: -1e9, hidNote: false, tailNote: false};
   $('#villain-chip').hidden = false;
-  toast('😈 Dikkat! Huysuz Yılan geldi, ondan kaç!', 2600); playSound('villain'); buzz([60, 40, 60]); music.setMode('danger');
+  toast('😈 Dikkat! Huysuz Yılan geldi, kaç ya da çalıya saklan!', 2600); playSound('villain'); buzz([60, 40, 60]); music.setMode('danger');
 }
 
 function updateVillain(dt) {
   if (!villain) { if (gameTime >= nextVillainAt && !friends.length) spawnVillain(); return; }
+  if (villain.leaving) { villain.leftAt ??= gameTime; if (gameTime - villain.leftAt > 10000) { poof(villain.body); villainLeaves(); return; } }
   villain.acc += dt;
   while (villain && state === 'playing' && villain.acc >= villainInterval()) { villain.acc -= villainInterval(); stepVillain(); }
 }
 
+// Lara'nın başı çalıdaysa Huysuz Yılan onu kaybeder; ancak çalı dışında 3 kareye kadar yaklaşırsa yeniden görür.
+function watchVillain() {
+  const v = villain;
+  if (!v || v.leaving || !v.body.some(inside)) return;
+  const me = snake[0], head = v.body[0];
+  if (isBush(me)) {
+    if (!v.lost) {
+      v.lost = true; v.lostAt = gameTime;
+      if (!v.hidNote) { v.hidNote = true; toast('🌳 Saklandın! Huysuz Yılan seni göremiyor.', 2000); playSound('hide'); }
+      award('hide');
+    }
+  } else if (v.lost && Math.abs(me.x - head.x) + Math.abs(me.y - head.y) <= 3) { v.lost = false; v.foundAt = gameTime; }
+  if (v.lost && gameTime - v.lostAt > 3500) {
+    v.leaving = true;
+    toast('😮‍💨 Huysuz Yılan seni bulamadı, gidiyor!', 2000);
+  }
+}
+
 function stepVillain() {
   const v = villain, head = v.body[0], reverse = d => d.x === -v.dir.x && d.y === -v.dir.y;
+  const canEnter = c => villainGround(c) && !v.body.some(p => same(p, c));
   if (!v.leaving && gameTime >= v.until) v.leaving = true;
+  if (!v.leaving && inside(head)) watchVillain();
   let dir = v.dir;
   if (v.leaving) {
     if (v.body.every(c => !inside(c))) { villainLeaves(); return; }
-    if (inside(head)) {
-      dir = [{d: dirs.left, dist: head.x}, {d: dirs.right, dist: N - 1 - head.x}, {d: dirs.up, dist: head.y}, {d: dirs.down, dist: N - 1 - head.y}]
-        .filter(o => !reverse(o.d)).sort((a, b) => a.dist - b.dist)[0].d;
-    }
+    if (inside(head)) { dir = exitDir(head, v.dir, canEnter); if (!dir) return; }
   } else if (inside(head)) {
-    const free = d => { const n = {x: head.x + d.x, y: head.y + d.y}; return inside(n) && !v.body.some(p => same(p, n)); };
-    const options = Object.values(dirs).filter(d => !reverse(d) && free(d));
-    if (!options.length) v.leaving = true;
-    else {
-      const target = snake[0], gap = d => Math.abs(head.x + d.x - target.x) + Math.abs(head.y + d.y - target.y);
-      options.sort((a, b) => gap(a) - gap(b));
-      dir = Math.random() < .7 ? options[0] : pick(options);
+    const options = Object.values(dirs).filter(d => !reverse(d) && canEnter(stepOf(head, d)));
+    if (v.lost) {
+      // Göremiyor: Lara'nın başına ve ilk boğumlarına yaklaşmadan rastgele dolaşır.
+      const near = c => snake.slice(0, BITE_REACH).some(p => Math.abs(p.x - c.x) + Math.abs(p.y - c.y) <= 1);
+      const safe = options.filter(d => !near(stepOf(head, d)));
+      dir = safe.includes(v.dir) && Math.random() < .6 ? v.dir : safe.length ? pick(safe) : null;
+      if (!dir) return;
+    } else {
+      const target = snake[0];
+      const best = firstStep(head, c => same(c, target) && villainGround(c), canEnter);
+      dir = best && Math.random() < .7 ? best : options.length ? pick(options) : best;
+      if (!dir) { v.leaving = true; return; }
     }
   }
   v.dir = dir;
   v.prev = v.body.map(p => ({...p}));
-  v.body.unshift({x: head.x + dir.x, y: head.y + dir.y}); v.body.pop();
+  v.body.unshift(stepOf(head, dir)); v.body.pop();
   const loot = foods.findIndex(p => same(p, v.body[0]));
   if (loot >= 0 && !v.carry && !v.leaving && Math.random() < .6) {
     v.carry = foods.splice(loot, 1)[0].type.icon;
@@ -675,16 +986,23 @@ function stepVillain() {
 
 function villainLeaves() {
   const bit = villain.bit, carried = villain.carry;
-  villain = null; $('#villain-chip').hidden = true; scheduleVillain(false); music.setMode('happy');
+  villain = null; $('#villain-chip').hidden = true; scheduleVillain(); music.setMode('happy');
+  nextFriendAt = Math.min(nextFriendAt, gameTime + 5000 + rand(4000));
   if (bit) { toast('😮‍💨 Huysuz Yılan gitti.', 2000); return; }
   if (carried) toast(`😮‍💨 Huysuz Yılan ${carried} ile kaçtı ama sen kurtuldun!`, 2400);
   addScore(40); confetti(40);
   toast('🎉 Huysuz Yılan pes etti, kaçmayı başardın! +40', 2600); playSound('mission'); award('escape');
 }
 
+// Isırık yalnız baş ve ilk 3 boğumda sayılır; kuyruğa dokunmak zararsız.
 function checkBite() {
   if (!villain || villain.leaving || state !== 'playing') return;
-  if (!villain.body.some(c => same(c, snake[0])) && !snake.some(c => same(c, villain.body[0]))) return;
+  const head = villain.body[0];
+  const bitten = villain.body.some(c => same(c, snake[0])) || snake.slice(0, BITE_REACH).some(c => same(c, head));
+  if (!bitten) {
+    if (!villain.tailNote && snake.some(c => same(c, head))) { villain.tailNote = true; toast('😤 Huysuz Yılan kuyruğunu yakalayamadı!', 1800); }
+    return;
+  }
   if (active('shield')) {
     effects.shield = 0; villain.leaving = true;
     toast("🛡️ Kalkan Huysuz Yılan'ı korkuttu!", 2000); playSound('rescue');
@@ -701,14 +1019,14 @@ function updateHud() {
   scoreEl.textContent = score;
   heartsEl.textContent = '❤️'.repeat(lives) + '🤍'.repeat(MAX_LIVES - lives);
   heartsEl.setAttribute('aria-label', `${lives} kalp`);
-  const progress = collected - (missionTarget - 5);
-  $('#mission-label').textContent = `🌼 ${missionTarget} meyve topla`;
-  $('#mission-count').textContent = `${progress} / 5`;
+  const progress = levelFruit - (missionTarget - MISSION_SIZE), info = levelInfo(level);
+  $('#mission-label').textContent = `${info.icon} Bölüm ${level} · Görev ${Math.min(missionsDone + 1, MISSIONS)}/${MISSIONS}`;
+  $('#mission-count').textContent = `🍎 ${progress} / ${MISSION_SIZE}`;
   $('#mission-progress').value = progress;
   const comboEl = $('#combo');
   comboEl.hidden = combo < 2; comboEl.textContent = `🔥 Seri ×${combo}`;
   for (const type of bonuses) {
-    if (type.kind === 'heart') continue;
+    if (!type.duration) continue;
     const chip = $(`#effect-${type.kind}`), on = active(type.kind);
     chip.hidden = !on;
     if (on) chip.textContent = `${type.icon} ${Math.ceil((effects[type.kind] - gameTime) / 1000)} sn`;
@@ -722,14 +1040,30 @@ function setScreen(name) {
   screen = name; overlay.hidden = false;
   $$('.screen').forEach(s => s.hidden = s.dataset.screen !== name);
   overlay.scrollTop = 0;
-  if (name === 'start') { renderSkins(); syncSettings(); }
+  if (name === 'start') { renderLevels(); renderSkins(); syncSettings(); }
   if (name === 'pause') syncSettings();
   if (name === 'stickers') renderStickers();
 }
 function openStickers() {
-  if (state === 'countdown' || state === 'hurt') return;
+  if (state === 'countdown' || state === 'hurt' || (state === 'cleared' && !clearedShown)) return;
   if (state === 'playing') pause();
   stickersReturn = screen; setScreen('stickers');
+}
+
+// Bölüm seçimi: açılan bölümler yıldızlarıyla; 8. bölümden sonra sürpriz bahçeler.
+function renderLevels() {
+  const surpriseOpen = profile.unlocked > levels.length;
+  const tiles = levels.map((info, i) => {
+    const n = i + 1, locked = n > profile.unlocked, stars = profile.levelStars[i] || 0;
+    const cls = locked ? ' locked' : n === profile.unlocked ? ' next' : '';
+    return `<button type="button" class="level${cls}" data-level="${n}" aria-label="Bölüm ${n}: ${info.name}${locked ? ', kilitli' : `, ${stars} yıldız`}">` +
+      `<span class="icon">${locked ? '🔒' : info.icon}</span><b>${n}</b><small><i>${'★'.repeat(stars)}</i>${'★'.repeat(3 - stars)}</small></button>`;
+  });
+  tiles.push(`<button type="button" class="level${surpriseOpen ? ' next' : ' locked'}" data-level="surprise" aria-label="Sürpriz bahçe${surpriseOpen ? '' : ', kilitli'}">` +
+    `<span class="icon">${surpriseOpen ? surprise.icon : '🔒'}</span><b>∞</b><small>Sürpriz</small></button>`);
+  $('#levels').innerHTML = tiles.join('');
+  const n = profile.unlocked;
+  $('#start-label').textContent = n > levels.length ? `Oyna · ${surprise.icon} Sürpriz` : `Oyna · Bölüm ${n}`;
 }
 
 function renderSkins() {
@@ -779,10 +1113,10 @@ function updateToggles() {
 /* ---------- Çizim ---------- */
 let bgCanvas = null, bgKey = '';
 function background() {
-  const key = canvas.width + (night ? 'n' : 'd');
-  if (bgCanvas && bgKey === key) return bgCanvas;
+  const cacheKey = canvas.width + (night ? 'n' : 'd') + terrain.id;
+  if (bgCanvas && bgKey === cacheKey) return bgCanvas;
   const scale = canvas.width / SIZE;
-  bgCanvas = document.createElement('canvas'); bgCanvas.width = canvas.width; bgCanvas.height = canvas.height; bgKey = key;
+  bgCanvas = document.createElement('canvas'); bgCanvas.width = canvas.width; bgCanvas.height = canvas.height; bgKey = cacheKey;
   const g = bgCanvas.getContext('2d'); g.scale(scale, scale);
   const tiles = night ? ['#35624a', '#3a6a50'] : ['#c8e69e', '#d2eca9'];
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { g.fillStyle = tiles[(x + y) % 2]; g.fillRect(x * S, y * S, S, S); }
@@ -800,7 +1134,98 @@ function background() {
     for (let k = 0; k < 5; k++) { const a = k * Math.PI * 2 / 5; g.beginPath(); g.arc(x + Math.cos(a) * 4, y + Math.sin(a) * 4, 2.6, 0, Math.PI * 2); g.fill(); }
     g.fillStyle = '#f7d04b'; g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fill();
   }
+  g.globalAlpha = 1;
+  drawGround(g);
   return bgCanvas;
+}
+
+// Gölet ve kayalar ile tünel ağızlarının içi; değişmedikleri için arka planla birlikte bir kez çizilir.
+function drawGround(g) {
+  const cells = ch => terrain.tiles.flatMap((t, i) => t === ch ? [{x: i % N, y: Math.floor(i / N), i}] : []);
+  // Komşusu da gölet olan kenarlar düz, dışa bakan köşeler yuvarlak: hücreler tek bir göle kaynaşır.
+  const blob = (c, pad, r) => {
+    const has = (dx, dy) => tile({x: c.x + dx, y: c.y + dy}) === 'W';
+    const u = has(0, -1), d = has(0, 1), l = has(-1, 0), rt = has(1, 0);
+    // Komşuya doğru 1 piksel taşır: hücre sınırında dikiş görünmez.
+    const x0 = c.x * S - (l ? 1 : pad), y0 = c.y * S - (u ? 1 : pad), x1 = (c.x + 1) * S + (rt ? 1 : pad), y1 = (c.y + 1) * S + (d ? 1 : pad);
+    g.beginPath(); g.roundRect(x0, y0, x1 - x0, y1 - y0, [!u && !l ? r : 0, !u && !rt ? r : 0, !d && !rt ? r : 0, !d && !l ? r : 0]); g.fill();
+  };
+  const water = cells('W');
+  g.fillStyle = night ? '#24506a' : '#4aa3c9'; water.forEach(c => blob(c, 2, 16));
+  g.fillStyle = night ? '#2f6f8f' : '#7cd0ef'; water.forEach(c => blob(c, -4, 12));
+  g.strokeStyle = night ? 'rgba(200,235,255,.35)' : 'rgba(255,255,255,.7)'; g.lineWidth = 2.5; g.lineCap = 'round';
+  water.forEach(c => {
+    if (c.i % 3) return;
+    const x = c.x * S + 12, y = c.y * S + 18;
+    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 6, y - 5, x + 12, y); g.quadraticCurveTo(x + 18, y + 5, x + 22, y); g.stroke();
+  });
+  water.forEach(c => {
+    if (c.i % 5 !== 2) return;
+    const x = c.x * S + 26, y = c.y * S + 27;
+    g.fillStyle = night ? '#3f7d4c' : '#5fb04a'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, 8, .5, Math.PI * 2 - .1); g.closePath(); g.fill();
+    g.fillStyle = '#ff9fc2'; g.beginPath(); g.arc(x - 2, y - 2, 2.6, 0, Math.PI * 2); g.fill();
+  });
+  for (const c of cells('R')) {
+    const cx = c.x * S + S / 2, cy = c.y * S + S / 2 + 2;
+    g.fillStyle = 'rgba(40,60,20,.22)'; g.beginPath(); g.ellipse(cx + 2, cy + 11, 16, 6, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = night ? '#6c727d' : '#9ba3ab'; g.strokeStyle = night ? '#454a53' : '#6f777f'; g.lineWidth = 2.5;
+    g.beginPath(); g.moveTo(cx - 16, cy + 9); g.bezierCurveTo(cx - 19, cy - 6, cx - 9, cy - 16, cx + 2, cy - 15);
+    g.bezierCurveTo(cx + 14, cy - 14, cx + 19, cy - 2, cx + 16, cy + 9); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = night ? 'rgba(255,255,255,.18)' : 'rgba(255,255,255,.45)'; g.beginPath(); g.ellipse(cx - 5, cy - 7, 7, 4, -.4, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = night ? '#4d525b' : '#7d858d'; g.lineWidth = 1.8; g.beginPath(); g.moveTo(cx + 5, cy - 3); g.lineTo(cx + 9, cy + 3); g.lineTo(cx + 7, cy + 8); g.stroke();
+  }
+  for (const c of [...cells('1'), ...cells('2')]) {
+    const cx = c.x * S + S / 2, cy = c.y * S + S / 2;
+    g.fillStyle = night ? '#6b5238' : '#a7835a'; g.beginPath(); g.ellipse(cx, cy, 18, 15, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = tunnelColor(c); g.beginPath(); g.ellipse(cx, cy, 15, 12, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#26190d'; g.beginPath(); g.ellipse(cx, cy + 1, 11, 8.5, 0, 0, Math.PI * 2); g.fill();
+  }
+}
+// Aynı renkteki iki delik birbirine bağlı.
+const tunnelColor = c => tile(c) === '2' ? '#a98be0' : '#f2a65a';
+
+// Kopan kuyruk halkalarının açtığı çiçekler; büyüyerek belirir.
+function drawBlooms(now) {
+  for (const b of blooms) {
+    const grow = clamp((now - b.born) / 450, 0, 1), cx = b.x * S + S / 2, cy = b.y * S + S / 2, r = 5.5 * (.4 + .6 * grow);
+    ctx.fillStyle = b.color;
+    for (let k = 0; k < 5; k++) { const a = k * Math.PI * 2 / 5 + b.x; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * r * 1.2, cy + Math.sin(a) * r * 1.2, r, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = '#f7c531'; ctx.beginPath(); ctx.arc(cx, cy, r * .75, 0, Math.PI * 2); ctx.fill();
+  }
+}
+// Tünel ağzında dönen kıvılcımlar (yılanın altında kalır).
+function drawTunnels(now) {
+  terrain.partner.forEach((_, i) => {
+    const c = {x: i % N, y: Math.floor(i / N)}, cx = c.x * S + S / 2, cy = c.y * S + S / 2 + 1;
+    ctx.fillStyle = tunnelColor(c);
+    for (let k = 0; k < 3; k++) { const a = now / 380 + k * Math.PI * 2 / 3; ctx.beginPath(); ctx.arc(cx + Math.cos(a) * 6, cy + Math.sin(a) * 4.5, 1.8, 0, Math.PI * 2); ctx.fill(); }
+  });
+}
+// Deliğin ön kenarı yılanın üstüne çizilir: yılan deliğe giriyormuş gibi görünür.
+function drawTunnelRims() {
+  ctx.lineWidth = 6; ctx.lineCap = 'round';
+  terrain.partner.forEach((_, i) => {
+    const c = {x: i % N, y: Math.floor(i / N)};
+    if (!snake.some(p => same(p, c))) return;
+    ctx.strokeStyle = tunnelColor(c);
+    ctx.beginPath(); ctx.ellipse(c.x * S + S / 2, c.y * S + S / 2, 15.5, 12.5, 0, .15, Math.PI - .15); ctx.stroke();
+  });
+}
+// Çalılar her şeyin üstünde: içindeki yılan yarı saydam görünür, yapraklar kıpırdar.
+function drawBushes(now) {
+  terrain.tiles.forEach((t, i) => {
+    if (t !== 'B') return;
+    const c = {x: i % N, y: Math.floor(i / N)}, cx = c.x * S + S / 2, cy = c.y * S + S / 2;
+    const busy = snake.some(p => same(p, c)) || friends.some(f => f.body.some(p => same(p, c)));
+    const sway = busy ? Math.sin(now / 90 + i) * 1.6 : 0;
+    ctx.globalAlpha = busy ? .62 : .96;
+    ctx.fillStyle = night ? '#25552d' : '#4f9a35';
+    for (const [dx, dy, r] of [[-9, 6, 15], [9, 6, 15], [0, -6, 16], [-12, -6, 11], [12, -6, 11]]) { ctx.beginPath(); ctx.arc(cx + dx + sway, cy + dy, r, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = night ? '#33703c' : '#6cbc48';
+    for (const [dx, dy, r] of [[-7, 1, 9], [7, 2, 9], [0, -9, 9]]) { ctx.beginPath(); ctx.arc(cx + dx + sway, cy + dy, r, 0, Math.PI * 2); ctx.fill(); }
+    if (i % 3 === 0) { ctx.fillStyle = night ? '#d9667f' : '#e4554f'; for (const [dx, dy] of [[-8, -2], [5, 8]]) { ctx.beginPath(); ctx.arc(cx + dx + sway, cy + dy, 2.6, 0, Math.PI * 2); ctx.fill(); } }
+  });
+  ctx.globalAlpha = 1;
 }
 
 function drawEmoji(icon, x, y, size) { ctx.fillStyle = '#000'; ctx.font = emojiFont(size); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(icon, x, y + 1); }
@@ -886,8 +1311,11 @@ function drawCreature(cells, prev, t, sk, o) {
   const scale = o.scale || 1, len = cells.length;
   // Kenardan geçişte hücre farkı 15 görünür; gerçek hareket 1 hücredir, yönü koruyarak tahtanın dışına doğru sür.
   const unwrap = d => o.wrap ? (d > 1 ? d - N : d < -1 ? d + N : d) : d;
+  // Tünelden geçen yılanın zinciri iki deliğin arasında kopar.
+  const jump = i => i > 0 && !!holeOf(cells[i]) && same(holeOf(cells[i]), cells[i - 1]);
   const pts = cells.map((c, i) => {
     const p = prev[i];
+    if (p && holeOf(p) && same(holeOf(p), c)) return {x: (c.x + .5) * S, y: (c.y + .5) * S};
     if (!p) return {x: (c.x + .5) * S, y: (c.y + .5) * S};
     const dx = unwrap(c.x - p.x), dy = unwrap(c.y - p.y);
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) return {x: (c.x + .5) * S, y: (c.y + .5) * S};
@@ -897,6 +1325,7 @@ function drawCreature(cells, prev, t, sk, o) {
   if (o.wrap) {
     // Zinciri kesintisiz yap: her nokta bir öncekine yakın olacak şekilde bir tahta boyu kaydır.
     for (let i = 1; i < len; i++) {
+      if (jump(i)) continue;
       if (pts[i].x - pts[i - 1].x > SIZE / 2) pts[i].x -= SIZE; else if (pts[i - 1].x - pts[i].x > SIZE / 2) pts[i].x += SIZE;
       if (pts[i].y - pts[i - 1].y > SIZE / 2) pts[i].y -= SIZE; else if (pts[i - 1].y - pts[i].y > SIZE / 2) pts[i].y += SIZE;
     }
@@ -906,7 +1335,7 @@ function drawCreature(cells, prev, t, sk, o) {
     if (Math.min(...ys) < S) shiftsY.push(SIZE); if (Math.max(...ys) > SIZE - S) shiftsY.push(-SIZE);
   }
   const width = i => S * .72 * scale * (i >= len - 3 ? .78 + .07 * (len - 1 - i) : 1);
-  const linked = i => i > 0 && Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) < S * 1.6;
+  const linked = i => i > 0 && !jump(i) && Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) < S * 1.6;
   const pass = (w, color) => {
     for (let i = len - 1; i >= 1; i--) {
       ctx.strokeStyle = ctx.fillStyle = color ? color(i) : ctx.strokeStyle;
@@ -924,6 +1353,7 @@ function drawCreature(cells, prev, t, sk, o) {
     drawPattern(sk, pts, width, linked, o.now);
     drawHead(pts, sk, scale, o);
     if (o.carry) drawEmoji(o.carry, pts[0].x, pts[0].y - S * .78 + Math.sin(o.now / 180) * 2, 20);
+    if (o.mark) drawEmoji(o.mark, pts[0].x + S * .5, pts[0].y - S * .85 + Math.sin(o.now / 140) * 2, 22);
   };
   for (const sx of shiftsX) for (const sy of shiftsY) {
     if (sx || sy) { ctx.save(); ctx.translate(sx, sy); paint(); ctx.restore(); } else paint();
@@ -1092,6 +1522,7 @@ function draw(now) {
   if (hurtAge < 450) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
   ctx.drawImage(background(), 0, 0, SIZE, SIZE);
   if (walls) drawFence();
+  drawBlooms(now); drawTunnels(now);
   drawFoods(now);
   if (bonus) drawPickup(bonus, bonus.type.color, bonus.type.icon, (bonus.expires - gameTime) / 12000, now);
   for (const g of gifts) drawPickup(g, '#e35a8c', '🎁', (g.expires - gameTime) / 15000, now);
@@ -1099,8 +1530,12 @@ function draw(now) {
   if (active('slow')) drawSnow(now);
   const look = {x: (snake[0].x + .5) * S, y: (snake[0].y + .5) * S};
   for (const f of friends) drawCreature(f.body, f.prev, f.follow ? t : clamp(f.acc / friendInterval(), 0, 1), f.skin, {now, scale: .8, dir: f.dir, happy: gameTime < f.happyUntil, lookAt: look, phase: f.phase, wrap: f.follow && !walls});
-  if (villain) drawCreature(villain.body, villain.prev, clamp(villain.acc / villainInterval(), 0, 1), villainSkin, {now, scale: .9, dir: villain.dir, evil: true, lookAt: look, phase: 500, carry: villain.carry});
+  if (villain) {
+    const mark = villain.leaving ? null : villain.lost ? '❓' : gameTime - villain.foundAt < 1200 ? '❗' : null;
+    drawCreature(villain.body, villain.prev, clamp(villain.acc / villainInterval(), 0, 1), villainSkin, {now, scale: .9, dir: villain.dir, evil: true, lookAt: villain.lost ? null : look, phase: 500, carry: villain.carry, mark});
+  }
   drawCreature(snake, prevSnake, t, skin(), {now, dir: direction, hurt: state === 'hurt', eatPulse, shield: active('shield'), star: active('star'), wrap: !walls});
+  drawTunnelRims(); drawBushes(now);
   drawParticles(); drawPops(now);
   if (hurtAge < 700) { ctx.fillStyle = `rgba(255,120,150,${(1 - hurtAge / 700) * .35})`; ctx.fillRect(-10, -10, SIZE + 20, SIZE + 20); }
   ctx.restore();
@@ -1114,8 +1549,7 @@ function fitCanvas() {
   ctx.setTransform(px / SIZE, 0, 0, px / SIZE, 0, 0);
 }
 
-function frame(now) {
-  const dt = Math.min(250, now - lastFrame || 16); lastFrame = now;
+function update(dt, now) {
   if (state === 'playing') {
     gameTime += dt; acc += dt; interval = currentInterval();
     for (let guard = 0; acc >= interval && state === 'playing' && guard < 4; guard++) { acc -= interval; tick(); }
@@ -1123,8 +1557,13 @@ function frame(now) {
     if (state === 'playing') updateVillain(dt);
   } else if (state === 'countdown') stepCountdown(now);
   else if (state === 'hurt') stepHurt(now);
+  else if (state === 'cleared') stepCleared(now);
   eatPulse = Math.max(0, eatPulse - dt / 260);
   updateParticles(dt);
+}
+function frame(now) {
+  const dt = Math.min(250, now - lastFrame || 16); lastFrame = now;
+  update(dt, now);
   draw(now);
   requestAnimationFrame(frame);
 }
@@ -1161,22 +1600,29 @@ document.addEventListener('keydown', e => {
   if (e.target.matches('button,a')) return;
   if (e.code === 'Space' || e.key === 'Enter') {
     e.preventDefault();
-    if (state === 'playing') pause(); else if (state === 'paused') resume(); else if (state === 'ready' || state === 'over') begin();
+    if (state === 'playing') pause(); else if (state === 'paused') resume(); else if (state === 'ready') play(profile.unlocked);
+    else if (state === 'over') retryLevel(); else if (state === 'cleared' && clearedShown) nextLevel();
   }
   if (e.key === 'Escape') { if (state === 'playing') pause(); else if (state === 'paused') resume(); }
 });
 
-$('#start').addEventListener('click', begin);
-$('#again').addEventListener('click', begin);
+$('#start').addEventListener('click', () => play(profile.unlocked));
+$('#again').addEventListener('click', retryLevel);
+$('#next-level').addEventListener('click', nextLevel);
 $('#resume').addEventListener('click', resume);
 pauseBtn.addEventListener('click', () => state === 'paused' ? resume() : pause());
 $('#stickers-btn').addEventListener('click', openStickers);
 document.addEventListener('click', e => {
-  const el = e.target.closest('[data-action],[data-open],[data-speed],[data-skin]');
+  const el = e.target.closest('[data-action],[data-open],[data-speed],[data-skin],[data-level]');
   if (!el) return;
   if (el.dataset.open === 'stickers') openStickers();
   else if (el.dataset.action === 'close-stickers') setScreen(stickersReturn);
-  else if (el.dataset.action === 'restart') begin();
+  else if (el.dataset.action === 'restart') retryLevel();
+  else if (el.dataset.level) {
+    const n = el.dataset.level === 'surprise' ? Math.max(levels.length + 1, profile.unlocked) : Number(el.dataset.level);
+    if (n > profile.unlocked) { toast(`🔒 Önce Bölüm ${Math.min(profile.unlocked, levels.length)}'i bitir`, 1800); playSound('locked'); return; }
+    play(n);
+  }
   else if (el.dataset.action === 'home') home();
   else if (el.dataset.speed) { speed = Number(el.dataset.speed); profile.speed = speed; saveProfile(); syncSettings(); playSound('turn'); }
   else if (el.dataset.skin) {
@@ -1221,10 +1667,11 @@ document.addEventListener('visibilitychange', () => {
   lastFrame = performance.now();
   if (state === 'countdown') countdownStart = performance.now();
   if (state === 'hurt') hurtStart = performance.now();
+  if (state === 'cleared') clearedStart = performance.now();
 });
 
 /* ---------- Başlat ---------- */
-renderSettings(); updateToggles(); fitCanvas(); reset(); setScreen('start');
+renderSettings(); updateToggles(); fitCanvas(); setupLevel(profile.unlocked, false); setScreen('start');
 new ResizeObserver(fitCanvas).observe(canvas);
 window.addEventListener('resize', fitCanvas);
 requestAnimationFrame(now => { lastFrame = now; frame(now); });

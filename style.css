@@ -96,6 +96,17 @@ h2{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--muted);text-transf
 .link{font-size:15px;font-weight:600;color:var(--green-dark);text-decoration:none;padding:6px 4px}
 .note{margin:8px 0 0;font-size:15px;color:var(--muted);font-weight:500;text-align:left}
 
+/* Bölümler */
+.levels{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:10px;padding:2px}
+.level{min-width:0;display:grid;gap:2px;justify-items:center;padding:10px 4px 8px;border-radius:18px;background:#f6f8f0;border:3px solid transparent;line-height:1.1}
+.level .icon{font-size:30px;line-height:1.15}
+.level b{font-size:18px;font-weight:700;color:var(--green-dark)}
+.level small{font-size:14px;letter-spacing:1px;color:#d8dccf}
+.level small i{font-style:normal;color:var(--yellow-dark)}
+.level.next{border-color:var(--green);background:var(--green-light);animation:nudge 1.8s ease-in-out infinite}
+.level.locked{opacity:.5}
+.level:active{transform:translateY(3px)}
+
 /* Yılan seçimi */
 .skins{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:2px}
 .skin{min-width:0;display:grid;gap:6px;justify-items:center;padding:12px 6px 10px;border-radius:18px;background:#f6f8f0;border:3px solid transparent;font-size:14px;font-weight:600;color:var(--ink);line-height:1.2}
@@ -134,6 +145,7 @@ h2{margin:0 0 10px;font-size:14px;font-weight:700;color:var(--muted);text-transf
 .sticker.fresh{background:#fff4c2;box-shadow:0 0 0 3px var(--yellow)}
 
 @keyframes bump{30%{transform:scale(1.25)}}
+@keyframes nudge{50%{transform:translateY(-3px)}}
 @keyframes pop{from{transform:scale(.85);opacity:0}}
 @keyframes bob{50%{transform:translateY(-8px) rotate(6deg)}}
 @keyframes countPop{from{transform:scale(1.7);opacity:0}}
