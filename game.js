@@ -461,6 +461,7 @@ function setupLevel(n, again) {
   if (levelInfo(n).villain) { nextVillainAt = 25000 + rand(5000); nextFriendAt = Infinity; }
   else { nextVillainAt = Infinity; nextFriendAt = 6000 + rand(4000); }
   fruits.forEach(type => spawnFruit(type));
+  buildPonds();
   updateHud();
 }
 
@@ -1143,29 +1144,26 @@ function background() {
 // Gölet ve tünel ağızlarının içi; değişmedikleri için arka planla birlikte bir kez çizilir.
 function drawGround(g) {
   const cells = ch => terrain.tiles.flatMap((t, i) => t === ch ? [{x: i % N, y: Math.floor(i / N), i}] : []);
-  // Komşusu da gölet olan kenarlar düz, dışa bakan köşeler yuvarlak: hücreler tek bir göle kaynaşır.
-  const blob = (c, pad, r) => {
-    const has = (dx, dy) => tile({x: c.x + dx, y: c.y + dy}) === 'W';
-    const u = has(0, -1), d = has(0, 1), l = has(-1, 0), rt = has(1, 0);
-    // Komşuya doğru 1 piksel taşır: hücre sınırında dikiş görünmez.
-    const x0 = c.x * S - (l ? 1 : pad), y0 = c.y * S - (u ? 1 : pad), x1 = (c.x + 1) * S + (rt ? 1 : pad), y1 = (c.y + 1) * S + (d ? 1 : pad);
-    g.beginPath(); g.roundRect(x0, y0, x1 - x0, y1 - y0, [!u && !l ? r : 0, !u && !rt ? r : 0, !d && !rt ? r : 0, !d && !l ? r : 0]); g.fill();
-  };
-  const water = cells('W');
-  g.fillStyle = night ? '#24506a' : '#4aa3c9'; water.forEach(c => blob(c, 2, 16));
-  g.fillStyle = night ? '#2f6f8f' : '#7cd0ef'; water.forEach(c => blob(c, -4, 12));
-  g.strokeStyle = night ? 'rgba(200,235,255,.35)' : 'rgba(255,255,255,.7)'; g.lineWidth = 2.5; g.lineCap = 'round';
-  water.forEach(c => {
-    if (c.i % 3) return;
-    const x = c.x * S + 12, y = c.y * S + 18;
-    g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 6, y - 5, x + 12, y); g.quadraticCurveTo(x + 18, y + 5, x + 22, y); g.stroke();
-  });
-  water.forEach(c => {
-    if (c.i % 5 !== 2) return;
-    const x = c.x * S + 26, y = c.y * S + 27;
-    g.fillStyle = night ? '#3f7d4c' : '#5fb04a'; g.beginPath(); g.moveTo(x, y); g.arc(x, y, 8, .5, Math.PI * 2 - .1); g.closePath(); g.fill();
-    g.fillStyle = '#ff9fc2'; g.beginPath(); g.arc(x - 2, y - 2, 2.6, 0, Math.PI * 2); g.fill();
-  });
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (const pond of ponds) {
+    // Kumlu kıyı ve üstünde çakıllar
+    g.fillStyle = night ? '#6d6a4f' : '#efdcaa'; g.beginPath(); pond.cells.forEach(c => pondShape(g, c, 8, 20)); g.fill();
+    for (const c of pond.cells) for (const d of Object.values(dirs)) {
+      if (tile(stepOf(c, d)) === 'W') continue;
+      for (let k = 0; k < 2; k++) {
+        const along = 6 + rnd() * (S - 12), out = 4 + rnd() * 3;
+        const px = d.x ? (d.x > 0 ? (c.x + 1) * S + out : c.x * S - out) : c.x * S + along;
+        const py = d.y ? (d.y > 0 ? (c.y + 1) * S + out : c.y * S - out) : c.y * S + along;
+        g.fillStyle = night ? '#55534a' : pick(['#c9b48a', '#b9b2a6', '#d8c59b']);
+        g.beginPath(); g.ellipse(px, py, 2.2 + rnd() * 1.4, 1.6 + rnd(), rnd() * 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    // Su kenarı ve ortaya doğru koyulaşan su
+    g.fillStyle = night ? '#1f4a62' : '#3f9fc8'; g.beginPath(); pond.cells.forEach(c => pondShape(g, c, 2, 16)); g.fill();
+    const deep = g.createRadialGradient(pond.cx, pond.cy, 4, pond.cx, pond.cy, pond.reach);
+    deep.addColorStop(0, night ? '#24607f' : '#4cb2dd'); deep.addColorStop(1, night ? '#3a86a8' : '#96dff5');
+    g.fillStyle = deep; g.fill(pond.clip);
+  }
   for (const c of [...cells('1'), ...cells('2')]) {
     const cx = c.x * S + S / 2, cy = c.y * S + S / 2;
     g.fillStyle = night ? '#6b5238' : '#a7835a'; g.beginPath(); g.ellipse(cx, cy, 18, 15, 0, 0, Math.PI * 2); g.fill();
@@ -1173,6 +1171,143 @@ function drawGround(g) {
     g.fillStyle = '#26190d'; g.beginPath(); g.ellipse(cx, cy + 1, 11, 8.5, 0, 0, Math.PI * 2); g.fill();
   }
 }
+// Gölet hücresinin şekli: komşusu da gölet olan kenar düz, dışa bakan köşe yuvarlak; hepsi tek yolda birleşir.
+function pondShape(target, c, pad, r) {
+  const has = (dx, dy) => tile({x: c.x + dx, y: c.y + dy}) === 'W';
+  const u = has(0, -1), d = has(0, 1), l = has(-1, 0), rt = has(1, 0);
+  const x0 = c.x * S - (l ? 0 : pad), y0 = c.y * S - (u ? 0 : pad), x1 = (c.x + 1) * S + (rt ? 0 : pad), y1 = (c.y + 1) * S + (d ? 0 : pad);
+  target.roundRect(x0, y0, x1 - x0, y1 - y0, [!u && !l ? r : 0, !u && !rt ? r : 0, !d && !rt ? r : 0, !d && !l ? r : 0]);
+}
+
+/* ---------- Gölet: balıklar ve nilüferler ---------- */
+// Balık ve nilüfer çizimleri Codex ile üretildi (img/). Yüklenemezse gölet yine çizilir, yalnız onlar görünmez.
+const sprite = name => { const img = new Image(); img.src = `img/${name}.png?v=1`; return img; };
+const art = {fish: ['fish-orange', 'fish-blue', 'fish-pink'].map(sprite), lily: sprite('lily-pad'), lotus: sprite('lily-flower')};
+const loaded = img => img.complete && img.naturalWidth > 0;
+let ponds = [], ripples = [];
+
+const cellCenter = c => ({x: (c.x + .5) * S, y: (c.y + .5) * S});
+// Balık bir gölet hücresinden komşu gölet hücresine yüzer: iki komşu kare birlikte dikdörtgen olduğundan yol hep suyun içinde kalır.
+function fishTarget(f, cells) {
+  const next = Math.random() < .35 ? f.cell : pick([f.cell, ...around(f.cell).filter(n => tile(n) === 'W')]);
+  f.cell = next;
+  const c = cellCenter(next);
+  f.tx = c.x + (Math.random() - .5) * 18; f.ty = c.y + (Math.random() - .5) * 16;
+}
+function buildPonds() {
+  ponds = []; ripples = [];
+  const seen = new Set();
+  terrain.tiles.forEach((t, i) => {
+    if (t !== 'W' || seen.has(i)) return;
+    const cells = [], todo = [{x: i % N, y: Math.floor(i / N)}];
+    seen.add(i);
+    while (todo.length) {
+      const c = todo.pop(); cells.push(c);
+      for (const n of around(c)) if (tile(n) === 'W' && !seen.has(key(n))) { seen.add(key(n)); todo.push(n); }
+    }
+    const clip = new Path2D(); cells.forEach(c => pondShape(clip, c, -1, 12));
+    const cx = cells.reduce((a, c) => a + c.x + .5, 0) / cells.length * S, cy = cells.reduce((a, c) => a + c.y + .5, 0) / cells.length * S;
+    const reach = Math.max(...cells.map(c => Math.hypot((c.x + .5) * S - cx, (c.y + .5) * S - cy))) + S * .7;
+    const lilyCells = shuffle(cells).slice(0, Math.max(1, Math.round(cells.length / 3.5)));
+    const lilies = lilyCells.map((c, k) => ({x: (c.x + .5) * S + (Math.random() - .5) * 12, y: (c.y + .5) * S + (Math.random() - .5) * 12, size: 23 + rand(5), rot: Math.random() * Math.PI * 2, lotus: k === 0 && cells.length >= 4 || Math.random() < .25, phase: Math.random() * 9}));
+    const kinds = shuffle([0, 1, 2]);
+    const fish = Array.from({length: clamp(Math.round(cells.length / 5), 1, 3)}, (_, k) => {
+      const cell = pick(cells), c = cellCenter(cell);
+      const f = {cell, x: c.x, y: c.y, tx: c.x, ty: c.y, kind: kinds[k], size: 31 + rand(6), face: Math.random() < .5 ? 1 : -1, tilt: 0, speed: 16 + Math.random() * 12, rest: rand(1500), wag: Math.random() * 6, jump: null};
+      fishTarget(f, cells);
+      return f;
+    });
+    ponds.push({cells, clip, cx, cy, reach, lilies, fish, nextJump: 3000 + rand(5000)});
+  });
+}
+
+function updatePonds(dt) {
+  const now = performance.now();
+  ripples = ripples.filter(r => now - r.born < 1100);
+  for (const pond of ponds) {
+    pond.nextJump -= dt;
+    if (pond.nextJump <= 0) {
+      // Arada bir balık sudan zıplar: kalkışta ve dalışta halka halka dalga, damlacık.
+      pond.nextJump = 5000 + rand(7000);
+      const f = pick(pond.fish.filter(k => !k.jump));
+      if (f) { f.jump = {born: now}; splash(f.x, f.y); }
+    }
+    for (const f of pond.fish) {
+      f.wag += dt * (f.rest > 0 ? .006 : .014);
+      if (f.jump) {
+        if (now - f.jump.born >= 950) { f.jump = null; splash(f.x, f.y); f.rest = 600; }
+        continue;
+      }
+      if (f.rest > 0) { f.rest -= dt; continue; }
+      const dx = f.tx - f.x, dy = f.ty - f.y, dist = Math.hypot(dx, dy);
+      if (dist < 1.5) { if (Math.random() < .35) f.rest = 400 + rand(1400); fishTarget(f, pond.cells); continue; }
+      const step = Math.min(dist, f.speed * dt / 1000);
+      f.x += dx / dist * step; f.y += dy / dist * step;
+      if (Math.abs(dx) > 1) f.face = dx > 0 ? 1 : -1;
+      f.tilt += (clamp(Math.atan2(dy, Math.abs(dx) + 1e-6), -.5, .5) - f.tilt) * Math.min(1, dt / 200);
+    }
+  }
+}
+function splash(x, y) {
+  ripples.push({x, y, born: performance.now()});
+  for (let i = 0; i < 8; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.2, sp = .05 + Math.random() * .09;
+    particles.push({x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: .0004, life: 520, max: 520, size: 1.8 + Math.random() * 1.6, color: night ? '#bfe6f5' : '#ffffff', shape: 'dot'});
+  }
+}
+
+// Kuyruk sallansın diye balık burnuna yakın bir noktanın çevresinde hafifçe döner.
+function drawFish(f, x, y, angle) {
+  const img = art.fish[f.kind];
+  if (!loaded(img)) return;
+  const w = f.size, h = w * img.naturalHeight / img.naturalWidth;
+  ctx.save(); ctx.translate(x, y); ctx.scale(f.face, 1); ctx.rotate(angle);
+  ctx.translate(w * .22, 0); ctx.rotate(Math.sin(f.wag) * .09); ctx.translate(-w * .22, 0);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+
+function drawPonds(now) {
+  for (const pond of ponds) {
+    ctx.save(); ctx.clip(pond.clip);
+    // Su altındaki balıklar: önce gölgesi, sonra kendisi; üstüne suyun rengi hafifçe biner.
+    ctx.globalAlpha = night ? .85 : 1;
+    for (const f of pond.fish) if (!f.jump) drawFish(f, f.x, f.y, f.tilt);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = night ? 'rgba(36,96,127,.25)' : 'rgba(120,205,238,.13)'; ctx.fill(pond.clip);
+    // Kıpırdayan ışıltılar
+    ctx.strokeStyle = night ? 'rgba(200,235,255,.3)' : 'rgba(255,255,255,.75)'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    for (let k = 0; k < Math.min(4, pond.cells.length); k++) {
+      const x = pond.cx + Math.sin(now / 2600 + k * 2.1) * pond.reach * .5, y = pond.cy + Math.cos(now / 3100 + k * 1.4) * pond.reach * .45;
+      ctx.globalAlpha = .35 + .55 * Math.max(0, Math.sin(now / 700 + k * 1.7));
+      ctx.beginPath(); ctx.moveTo(x - 7, y); ctx.quadraticCurveTo(x - 3.5, y - 3.5, x, y); ctx.quadraticCurveTo(x + 3.5, y + 3.5, x + 7, y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    for (const r of ripples) {
+      const age = (now - r.born) / 1100;
+      ctx.strokeStyle = `rgba(255,255,255,${(1 - age) * .8})`; ctx.lineWidth = 2;
+      for (const k of [0, .35]) if (age > k) { ctx.beginPath(); ctx.ellipse(r.x, r.y + 4, 4 + (age - k) * 22, 2 + (age - k) * 9, 0, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.restore();
+    // Nilüferler balıkların üstünde, hafifçe sallanır.
+    for (const l of pond.lilies) {
+      const img = l.lotus ? art.lotus : art.lily;
+      if (!loaded(img)) continue;
+      const size = l.size * (l.lotus ? 1.15 : 1);
+      ctx.save(); ctx.translate(l.x, l.y + Math.sin(now / 900 + l.phase) * .8); ctx.rotate(l.rot + Math.sin(now / 1300 + l.phase) * .06);
+      if (night) ctx.globalAlpha = .85;
+      ctx.drawImage(img, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    }
+    // Zıplayan balık su yüzeyinin üstünde, kavis çizerek.
+    for (const f of pond.fish) {
+      if (!f.jump) continue;
+      const p = clamp((now - f.jump.born) / 950, 0, 1);
+      drawFish(f, f.x + f.face * (p - .5) * 10, f.y - Math.sin(p * Math.PI) * 30, (p - .5) * 1.4);
+    }
+  }
+}
+
 // Aynı renkteki iki delik birbirine bağlı.
 const tunnelColor = c => tile(c) === '2' ? '#a98be0' : '#f2a65a';
 
@@ -1513,6 +1648,7 @@ function draw(now) {
   const hurtAge = state === 'hurt' ? now - hurtStart : Infinity;
   if (hurtAge < 450) ctx.translate((Math.random() - .5) * 8, (Math.random() - .5) * 8);
   ctx.drawImage(background(), 0, 0, SIZE, SIZE);
+  drawPonds(now);
   if (walls) drawFence();
   drawBlooms(now); drawTunnels(now);
   drawFoods(now);
@@ -1551,6 +1687,7 @@ function update(dt, now) {
   else if (state === 'hurt') stepHurt(now);
   else if (state === 'cleared') stepCleared(now);
   eatPulse = Math.max(0, eatPulse - dt / 260);
+  updatePonds(dt);
   updateParticles(dt);
 }
 function frame(now) {
